@@ -726,41 +726,92 @@ class App(tk.Tk):
     def snap_slider(self, parent, var, steps=4, length=260):
         """A slider that moves freely while dragged and eases onto the nearest 25% mark on release.
 
-        The keyboard itself only has 5 levels per setting (0-4).
+        The keyboard itself only has 5 levels per setting (0-4). Drawn on a canvas rather than
+        ttk.Scale, because recolouring a ttk.Scale for the RGB accent makes its handle jump.
         """
-        box = ttk.Frame(parent)
-        sc = ttk.Scale(box, from_=0, to=steps, variable=var, length=length)
-        sc.pack(anchor="w")
-        ticks = tk.Canvas(box, width=length, height=14, bg=k580_theme.PANEL, highlightthickness=0)
-        ticks.pack(anchor="w")
-        thumb = 9                                   # half the handle width, so marks line up with it
+        thumb, h = 9, 18                            # half handle width, track height
+        c = tk.Canvas(parent, width=length, height=h + 16, bg=k580_theme.PANEL, highlightthickness=0,
+                      cursor="hand2")
+        x0, x1 = thumb, length - thumb
+        c.create_rectangle(0, 0, length - 1, h - 1, fill="#090a0d", outline=k580_theme.BORDER)
+        fill = c.create_rectangle(1, 1, 1, h - 2, width=0)
+        handle = c.create_rectangle(0, 0, 0, 0, width=0)
+        grips = [c.create_line(0, 0, 0, 0, fill="#090a0d") for _ in range(3)]
         for i in range(steps + 1):
-            x = thumb + i * (length - 2 * thumb) / steps
-            ticks.create_line(x, 0, x, 4, fill=k580_theme.MUTED)
-            ticks.create_text(x, 10, text=f"{i * 100 // steps}%", fill=k580_theme.MUTED, font=("Segoe UI", 7))
+            x = x0 + i * (x1 - x0) / steps
+            c.create_line(x, h + 1, x, h + 5, fill=k580_theme.MUTED)
+            c.create_text(x, h + 11, text=f"{i * 100 // steps}%", fill=k580_theme.MUTED, font=("Segoe UI", 7))
+        anim = {"job": None, "grab": 0.0}
 
-        def press(_e):
-            k580_theme.DRAGGING = True
+        def to_x(v):
+            return x0 + max(0.0, min(steps, v)) * (x1 - x0) / steps
 
-        def release(_e):
-            # the keyboard only has 5 levels, so glide onto the nearest 25% mark, then apply
-            k580_theme.DRAGGING = False
-            start, target = var.get(), round(var.get())
-            frames = 8
+        def to_v(x):
+            return max(0.0, min(steps, (x - x0) * steps / (x1 - x0)))
+
+        def draw(*_):
+            try:
+                x = to_x(var.get())
+            except tk.TclError:
+                return
+            c.coords(fill, 1, 1, x, h - 1)
+            c.coords(handle, x - thumb, 0, x + thumb, h)
+            for i, g in enumerate(grips):
+                gx = x - 3 + 3 * i
+                c.coords(g, gx, 5, gx, h - 5)
+
+        def recolour():
+            if not c.winfo_exists():
+                return
+            phase = getattr(self, "_accent_phase", 0.5)
+            c.itemconfigure(handle, fill=k580_theme.hue_hex(phase, 0.65, 1.0))
+            c.itemconfigure(fill, fill=k580_theme.hue_hex(phase, 0.75, 0.45))
+            c.after(50, recolour)
+
+        def stop_anim():
+            if anim["job"]:
+                c.after_cancel(anim["job"])
+                anim["job"] = None
+
+        def glide(target, then=None, frames=8):
+            stop_anim()
+            start = var.get()
 
             def step(n=1):
                 t = n / frames
                 var.set(start + (target - start) * (1 - (1 - t) ** 3))   # ease-out
                 if n < frames:
-                    self.after(15, step, n + 1)
+                    anim["job"] = c.after(15, step, n + 1)
                 else:
+                    anim["job"] = None
                     var.set(target)
-                    self.apply_lighting()
+                    if then:
+                        then()
             step()
 
-        sc.bind("<ButtonPress-1>", press)
-        sc.bind("<ButtonRelease-1>", release)
-        return box
+        def press(e):
+            stop_anim()
+            hx = to_x(var.get())
+            if abs(e.x - hx) <= thumb + 2:
+                anim["grab"] = e.x - hx               # keep the handle under the pointer
+            else:
+                anim["grab"] = 0.0                    # clicked the track: jump there
+                var.set(to_v(e.x))
+
+        def motion(e):
+            var.set(to_v(e.x - anim["grab"]))
+
+        def release(_e):
+            # the keyboard only has 5 levels, so glide onto the nearest 25% mark, then apply
+            glide(round(var.get()), self.apply_lighting)
+
+        c.bind("<ButtonPress-1>", press)
+        c.bind("<B1-Motion>", motion)
+        c.bind("<ButtonRelease-1>", release)
+        var.trace_add("write", draw)
+        draw()
+        recolour()
+        return c
 
     def load_lighting(self):
         self.led = bytearray(self.get_led())
