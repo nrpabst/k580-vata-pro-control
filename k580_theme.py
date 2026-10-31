@@ -13,6 +13,7 @@ MUTED = "#8b91a7"
 FONT = ("Segoe UI", 10)
 FONT_BOLD = ("Segoe UI Semibold", 10)
 TITLE_FONT = ("Segoe UI Light", 18)
+DRAGGING = False        # set while a slider is being dragged, so the accent animation leaves it alone
 
 
 def hue_hex(h, s=0.85, v=1.0):
@@ -143,8 +144,9 @@ class RGBHeader(tk.Canvas):
         self.style.map("Accent.TButton", background=[("active", hue_hex(self.phase, 0.45, 1.0)),
                                                      ("disabled", PANEL)],
                        foreground=[("disabled", "#4b5063")])
-        for sc in ("Horizontal.TScale", "Vertical.TScale"):
-            self.style.configure(sc, background=accent, lightcolor=accent, darkcolor=accent)
+        if not DRAGGING:          # restyling a slider mid-drag makes its handle jump
+            for sc in ("Horizontal.TScale", "Vertical.TScale"):
+                self.style.configure(sc, background=accent, lightcolor=accent, darkcolor=accent)
         self.style.map("TNotebook.Tab", foreground=[("selected", accent), ("active", FG)],
                        background=[("selected", PANEL), ("active", FIELD)])
         self.after(50, self._tick)

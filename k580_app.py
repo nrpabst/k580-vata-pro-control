@@ -496,23 +496,17 @@ class App(tk.Tk):
         f.columnconfigure(1, weight=1)
         names = [k580.EFFECTS[h] for h in k580.SLOT_HW] + ["OFF"]
         self.effect = tk.StringVar()
-        self.bright = tk.IntVar()
-        self.speed = tk.IntVar()
+        self.bright = tk.DoubleVar()
+        self.speed = tk.DoubleVar()
         self.color = tk.StringVar()
         ttk.Label(f, text="Effect").grid(row=0, column=0, sticky="w", pady=4)
         ec = ttk.Combobox(f, textvariable=self.effect, values=names, state="readonly", width=24)
         ec.grid(row=0, column=1, sticky="w")
         ec.bind("<<ComboboxSelected>>", lambda e: self.apply_lighting(new_effect=True))
         ttk.Label(f, text="Brightness").grid(row=1, column=0, sticky="w", pady=4)
-        bs = ttk.Scale(f, from_=0, to=4, variable=self.bright, length=260,
-                       command=lambda v: self.bright.set(round(float(v))))
-        bs.grid(row=1, column=1, sticky="w")
-        bs.bind("<ButtonRelease-1>", lambda e: self.apply_lighting())
+        self.snap_slider(f, self.bright).grid(row=1, column=1, sticky="w")
         ttk.Label(f, text="Speed").grid(row=2, column=0, sticky="w", pady=4)
-        ss = ttk.Scale(f, from_=0, to=4, variable=self.speed, length=260,
-                       command=lambda v: self.speed.set(round(float(v))))
-        ss.grid(row=2, column=1, sticky="w")
-        ss.bind("<ButtonRelease-1>", lambda e: self.apply_lighting())
+        self.snap_slider(f, self.speed).grid(row=2, column=1, sticky="w")
         ttk.Label(f, text="Color").grid(row=3, column=0, sticky="w", pady=4)
         cc = ttk.Combobox(f, textvariable=self.color, values=k580.COLORS, state="readonly", width=24)
         cc.grid(row=3, column=1, sticky="w")
@@ -729,6 +723,42 @@ class App(tk.Tk):
         self.load_lighting()
         messagebox.showinfo("K580", "Done. Installed now: " + self.fw_state.cget("text"))
 
+    def snap_slider(self, parent, var, steps=4, length=260):
+        """A slider that moves freely while dragged and eases onto the nearest 25% mark on release."""
+        box = ttk.Frame(parent)
+        sc = ttk.Scale(box, from_=0, to=steps, variable=var, length=length)
+        sc.pack(anchor="w")
+        ticks = tk.Canvas(box, width=length, height=14, bg=k580_theme.PANEL, highlightthickness=0)
+        ticks.pack(anchor="w")
+        thumb = 9                                   # half the handle width, so marks line up with it
+        for i in range(steps + 1):
+            x = thumb + i * (length - 2 * thumb) / steps
+            ticks.create_line(x, 0, x, 4, fill=k580_theme.MUTED)
+            ticks.create_text(x, 10, text=f"{i * 100 // steps}%", fill=k580_theme.MUTED, font=("Segoe UI", 7))
+
+        def press(_e):
+            k580_theme.DRAGGING = True
+
+        def release(_e):
+            k580_theme.DRAGGING = False
+            start, target = var.get(), round(var.get())
+            frames = 8
+
+            def step(n=1):
+                t = n / frames
+                ease = 1 - (1 - t) ** 3             # ease-out: quick start, soft landing
+                var.set(start + (target - start) * ease)
+                if n < frames:
+                    self.after(15, step, n + 1)
+                else:
+                    var.set(target)
+                    self.apply_lighting()
+            step()
+
+        sc.bind("<ButtonPress-1>", press)
+        sc.bind("<ButtonRelease-1>", release)
+        return box
+
     def load_lighting(self):
         self.led = bytearray(self.get_led())
         self.refresh_media_state()
@@ -754,8 +784,8 @@ class App(tk.Tk):
         slot = effect_slot(hw)
         # switching effect keeps that effect's own saved brightness/speed/color
         if slot is not None and not new_effect:
-            led[0x3A + 2 * slot] = self.bright.get()
-            led[0x3B + 2 * slot] = (self.speed.get() << 4) | k580.COLORS.index(self.color.get() or "red")
+            led[0x3A + 2 * slot] = int(round(self.bright.get()))
+            led[0x3B + 2 * slot] = (int(round(self.speed.get())) << 4) | k580.COLORS.index(self.color.get() or "red")
         self.config(cursor="watch")
         self.update_idletasks()
         try:
