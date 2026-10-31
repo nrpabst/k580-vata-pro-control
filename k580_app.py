@@ -15,11 +15,26 @@ from tkinter import filedialog, messagebox, ttk
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import k580  # noqa: E402
 import k580_theme  # noqa: E402
+import k580_tray  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_VERSION = "0.2.0"
 UPDATE_URL = "https://api.github.com/repos/nrpabst/k580-vata-pro-control/releases/latest"
 RELEASES_PAGE = "https://github.com/nrpabst/k580-vata-pro-control/releases"
+PREFS_PATH = os.path.join(HERE, "settings.json")
+
+
+def load_prefs():
+    try:
+        with open(PREFS_PATH) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_prefs(prefs):
+    with open(PREFS_PATH, "w") as fh:
+        json.dump(prefs, fh, indent=1)
 
 # ---------------------------------------------------------------- key codes
 HID = {}
@@ -377,6 +392,48 @@ class App(tk.Tk):
             for t in nb.tabs():
                 if nb.tab(t, "text") == want:
                     nb.select(t)
+
+        # system tray: closing the window hides it; the tray icon brings it back or quits
+        self.prefs = load_prefs()
+        self.iconbitmap(default=k580_tray.icon_path())
+        self.tray = k580_tray.Tray()
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.after(200, self.poll_tray)
+        if "--tray" in sys.argv:
+            self.withdraw()
+
+    def on_close(self):
+        if self.prefs.get("close_to_tray", True):
+            self.withdraw()
+            if not self.prefs.get("tray_hint_shown"):
+                self.tray.notify("K580 Control is still running",
+                                 "It's in the system tray. Right-click the icon to quit.")
+                self.prefs["tray_hint_shown"] = True
+                save_prefs(self.prefs)
+        else:
+            self.quit_app()
+
+    def poll_tray(self):
+        try:
+            while True:
+                ev = self.tray.events.get_nowait()
+                if ev == "open":
+                    self.deiconify()
+                    self.lift()
+                    self.focus_force()
+                elif ev == "quit":
+                    self.quit_app()
+                    return
+        except Exception:
+            pass
+        self.after(200, self.poll_tray)
+
+    def quit_app(self):
+        self.tray.close()
+        for dev in (self.kb, self.wl):
+            if dev:
+                dev.close()
+        self.destroy()
 
     # ---------------- connection
     def connect(self):
@@ -1152,7 +1209,12 @@ class App(tk.Tk):
         section("App")
         self.autostart = tk.BooleanVar(value=self._autostart_enabled())
         line("Start with Windows", ttk.Checkbutton(f, variable=self.autostart, command=self.set_autostart),
-             "Opens this app when you sign in to Windows.")
+             "Starts the app in the system tray when you sign in to Windows.")
+        self.close_to_tray = tk.BooleanVar(value=load_prefs().get("close_to_tray", True))
+        line("Keep running in the tray", ttk.Checkbutton(f, variable=self.close_to_tray,
+                                                         command=self.set_close_to_tray),
+             "Closing the window (X) hides it in the system tray instead of quitting.\n"
+             "Click the tray icon to open it again; right-click it to quit.")
         line("Updates", ttk.Button(f, text="Check for updates", command=self.check_updates),
              f"You have version {APP_VERSION}. Checks the project's GitHub page for a newer one.")
 
@@ -1185,6 +1247,10 @@ class App(tk.Tk):
     def set_sleep(self):
         self._set_led_byte(self.SLEEP_BYTE, self.SLEEP_OPTIONS[self.sleep.get()])
 
+    def set_close_to_tray(self):
+        self.prefs["close_to_tray"] = bool(self.close_to_tray.get())
+        save_prefs(self.prefs)
+
     def _autostart_enabled(self):
         import winreg
         try:
@@ -1200,7 +1266,7 @@ class App(tk.Tk):
             if self.autostart.get():
                 pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
                 winreg.SetValueEx(k, "K580 Control", 0, winreg.REG_SZ,
-                                  f'"{pyw}" "{os.path.abspath(__file__)}"')
+                                  f'"{pyw}" "{os.path.abspath(__file__)}" --tray')
             else:
                 try:
                     winreg.DeleteValue(k, "K580 Control")
@@ -1292,4 +1358,6 @@ class App(tk.Tk):
 
 
 if __name__ == "__main__":
+    if k580_tray.show_existing():          # already running: bring that window up instead
+        sys.exit(0)
     App().mainloop()

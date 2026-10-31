@@ -13,6 +13,8 @@ Unofficial. Not affiliated with or endorsed by Redragon. Use at your own risk.
 - **Macros:** record keystrokes with their timing, or type text. A macro can play once,
   N times, while the key is held, or until another key is pressed.
 - **Key colors:** click keys on a picture of the keyboard and pick colors (the Self-define effect).
+- **Settings:** debounce, wireless sleep timer, start with Windows, update check, factory reset.
+- **System tray:** closing the window keeps the app running in the tray; it can start with Windows.
 - **Backup and restore** of lighting, all key layers and macros, including the G1–G5 recordings.
 - **Optional custom firmware:** keeps the media-key lights and the volume/brightness-key light on,
   each with an instant on/off checkbox. See [below](#custom-firmware).
@@ -73,5 +75,7 @@ python k580.py live 5 0=ff0000       # light Esc red for 5 seconds (live mode)
 | `k580_wireless.py` | 2.4G dongle protocol |
 | `k580_patch.py` | Firmware patch definition and installer helpers |
 | `k580_layout.py` | Key positions for drawing the keyboard |
+| `k580_theme.py` | Dark theme and RGB header |
+| `k580_tray.py` | System-tray icon (Win32, no extra packages) |
 | `K580 Control.bat` | Double-click launcher |
 | `third_party/sinowisp/` | Bundled flasher (sinowisp v2.1.0, MIT) used by the Firmware page |

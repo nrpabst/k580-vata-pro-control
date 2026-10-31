@@ -10,3 +10,6 @@ firmware/
 
 # Keep the bundled flasher binary
 !third_party/sinowisp/sinowisp.exe
+
+# Per-user app preferences
+settings.json
