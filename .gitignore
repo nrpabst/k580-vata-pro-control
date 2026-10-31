@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# Per-user data the app creates; never commit (contains your keyboard's firmware and settings)
+backups/
+firmware/
+*.hex
+*.bin
+
+# Flasher binary (download it from its own releases page)
+sinowisp.exe
