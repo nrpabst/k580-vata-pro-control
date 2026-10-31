@@ -506,13 +506,15 @@ class App(tk.Tk):
         ttk.Label(f, text="Brightness").grid(row=1, column=0, sticky="w", pady=4)
         self.snap_slider(f, self.bright, self.brightness_levels).grid(row=1, column=1, sticky="w")
         ttk.Label(f, text="Speed").grid(row=2, column=0, sticky="w", pady=4)
-        self.snap_slider(f, self.speed).grid(row=2, column=1, sticky="w")
+        self.speed_slider = self.snap_slider(f, self.speed)
+        self.speed_slider.grid(row=2, column=1, sticky="w")
         ttk.Label(f, text="Color").grid(row=3, column=0, sticky="w", pady=4)
-        cc = ttk.Combobox(f, textvariable=self.color, values=k580.COLORS, state="readonly", width=24)
-        cc.grid(row=3, column=1, sticky="w")
-        cc.bind("<<ComboboxSelected>>", lambda e: self.apply_lighting())
-        ttk.Label(f, text="Changes apply instantly. Some effects ignore speed or color.",
-                  style="Muted.TLabel").grid(row=4, column=0, columnspan=2, sticky="w", pady=12)
+        self.color_box = ttk.Combobox(f, textvariable=self.color, values=k580.COLORS, state="readonly",
+                                      width=24)
+        self.color_box.grid(row=3, column=1, sticky="w")
+        self.color_box.bind("<<ComboboxSelected>>", lambda e: self.apply_lighting())
+        self.effect_note = ttk.Label(f, text="Changes apply instantly.", style="Muted.TLabel")
+        self.effect_note.grid(row=4, column=0, columnspan=2, sticky="w", pady=12)
 
         ttk.Separator(f).grid(row=5, column=0, columnspan=2, sticky="ew", pady=8)
         self.media_on = tk.BooleanVar(value=True)
@@ -806,8 +808,9 @@ class App(tk.Tk):
             if not c.winfo_exists():
                 return
             phase = getattr(self, "_accent_phase", 0.5)
-            c.itemconfigure(handle, fill=k580_theme.hue_hex(phase, 0.65, 1.0))
-            c.itemconfigure(fill, fill=k580_theme.hue_hex(phase, 0.75, 0.45))
+            on = c.enabled
+            c.itemconfigure(handle, fill=k580_theme.hue_hex(phase, 0.65, 1.0) if on else k580_theme.MUTED)
+            c.itemconfigure(fill, fill=k580_theme.hue_hex(phase, 0.75, 0.45) if on else k580_theme.FIELD)
             c.after(50, recolour)
 
         def stop_anim():
@@ -832,6 +835,8 @@ class App(tk.Tk):
             step()
 
         def press(e):
+            if not c.enabled:
+                return
             stop_anim()
             hx = to_x(var.get())
             if abs(e.x - hx) <= thumb + 2:
@@ -841,12 +846,16 @@ class App(tk.Tk):
                 var.set(to_v(e.x))
 
         def motion(e):
-            var.set(to_v(e.x - anim["grab"]))
+            if c.enabled:
+                var.set(to_v(e.x - anim["grab"]))
 
         def release(_e):
+            if not c.enabled:
+                return
             # the keyboard has fixed levels, so glide onto the nearest one, then apply
             glide(round(var.get()), self.apply_lighting)
 
+        c.enabled = True                            # False greys it out for effects that ignore it
         c.bind("<ButtonPress-1>", press)
         c.bind("<B1-Motion>", motion)
         c.bind("<ButtonRelease-1>", release)
@@ -860,6 +869,7 @@ class App(tk.Tk):
         self.refresh_media_state()
         hw = self.led[10]
         self.effect.set(k580.EFFECTS.get(hw, "OFF"))
+        self.show_effect_options(hw)
         slot = effect_slot(hw)
         if slot is not None:
             b = self.led[0x3B + 2 * slot]
@@ -867,6 +877,22 @@ class App(tk.Tk):
             self.speed.set(b >> 4)
             self.color.set(k580.COLORS[b & 7])
         self.load_settings()
+
+    def show_effect_options(self, hw):
+        """Grey out speed/color for effects that ignore them (like the stock app hides them)."""
+        speed, color = k580.effect_options(hw)
+        self.speed_slider.enabled = speed
+        self.speed_slider.config(cursor="hand2" if speed else "")
+        self.color_box.config(state="readonly" if color else "disabled")
+        name = k580.EFFECTS.get(hw, "OFF")
+        note = "Changes apply instantly."
+        if hw in (3, 15, 16, 17):
+            note += f" {name} uses its own rainbow colors."
+        elif hw == 21:
+            note += " Self-define uses the colors from the Key colors page."
+        elif hw == 1:
+            note += " Fixed on doesn't move, so it has no speed."
+        self.effect_note.config(text=note)
 
     def apply_lighting(self, new_effect=False, keep_sliders=False):
         if not (self.kb or self.wl):
@@ -877,6 +903,7 @@ class App(tk.Tk):
         led = bytearray(self.led if self.led else self.get_led())
         led[10] = hw
         led[9] = 1 if hw == 21 else 0
+        self.show_effect_options(hw)
         slot = effect_slot(hw)
         # switching effect keeps that effect's own saved brightness/speed/color
         if slot is not None and not new_effect:

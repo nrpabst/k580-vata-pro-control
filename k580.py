@@ -229,6 +229,14 @@ EFFECTS = {0: "OFF", 1: "Fixed on", 2: "Respire", 3: "Rainbow", 4: "Flash away",
 # effect slot (order of LedOpt1..19 in KB.ini) -> hw effect id
 SLOT_HW = list(range(1, 19)) + [21]
 COLORS = ["red", "green", "blue", "yellow", "magenta", "cyan", "white", "multi/random"]
+# hw effect id -> (has speed, has color), from the speed and color flags of LedOptN in KB.ini.
+# Effects without a color option draw their own rainbow and ignore the color setting.
+NO_SPEED = {1, 21}
+NO_COLOR = {3, 15, 16, 17, 21}
+
+
+def effect_options(hw):
+    return hw not in NO_SPEED and hw != 0, hw not in NO_COLOR and hw != 0
 
 
 def describe_key(entry):
