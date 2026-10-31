@@ -473,19 +473,11 @@ class App(tk.Tk):
 
     # ---------------- firmware page
     FIRMWARE_NOTE = (
-        "Why install the custom firmware?\n\n"
-        "The stock firmware only flashes the three media-key lights for a moment when you\n"
-        "press them, and the volume/brightness key only lights in one mode. Nothing on the PC\n"
-        "can change that. The custom firmware adds two switches on the Lighting page: keep\n"
-        "the media-key lights on, and keep the volume/brightness key lit. They apply instantly\n"
-        "over the cable or the 2.4G dongle, and the keyboard remembers them.\n\n"
-        "It's a tiny change: 30 bytes of your keyboard's own firmware. Everything else works\n"
-        "exactly as before. Before changing anything, the installer checks that your keyboard\n"
-        "has the exact firmware version the change was made for, and it saves an untouched\n"
-        "copy so Uninstall can put the stock firmware back.\n\n"
-        "Installing or uninstalling takes about a minute and needs the cable (wireless switch\n"
-        "off). Your lighting, keys and macros are saved and put back automatically.\n"
-        "One thing is lost: a hidden WASD/arrow-swap mode that no key on the K580 uses.")
+        "The custom firmware lets you keep the media-key and volume-key lights on all the\n"
+        "time, instead of them only flashing when pressed. You turn them on or off on the\n"
+        "Lighting page.\n\n"
+        "Installing takes about a minute. Plug in the cable and switch wireless off first.\n"
+        "Your settings are kept, and Uninstall puts the original firmware back.")
 
     def build_firmware(self, nb):
         f = ttk.Frame(nb, padding=12)
