@@ -77,8 +77,9 @@ def apply(root):
            foreground=[("selected", FG), ("active", FG)], lightcolor=[("selected", PANEL)])
     st.configure("TSeparator", background=BORDER)
     # sliders: dark recessed track, bright handle (the handle colour follows the RGB accent)
-    st.configure("Horizontal.TScale", background=MUTED, troughcolor="#090a0d", bordercolor=BORDER,
-                 lightcolor=MUTED, darkcolor=MUTED, sliderthickness=18, troughrelief="flat")
+    for sc in ("Horizontal.TScale", "Vertical.TScale"):
+        st.configure(sc, background=MUTED, troughcolor="#090a0d", bordercolor=BORDER,
+                     lightcolor=MUTED, darkcolor=MUTED, sliderthickness=18, troughrelief="flat")
     # scrollbars (e.g. in long drop-down lists)
     for sb in ("Vertical.TScrollbar", "Horizontal.TScrollbar"):
         st.configure(sb, background=FIELD_HI, troughcolor=BG, bordercolor=BG, arrowcolor=FG,
@@ -142,7 +143,8 @@ class RGBHeader(tk.Canvas):
         self.style.map("Accent.TButton", background=[("active", hue_hex(self.phase, 0.45, 1.0)),
                                                      ("disabled", PANEL)],
                        foreground=[("disabled", "#4b5063")])
-        self.style.configure("Horizontal.TScale", background=accent, lightcolor=accent, darkcolor=accent)
+        for sc in ("Horizontal.TScale", "Vertical.TScale"):
+            self.style.configure(sc, background=accent, lightcolor=accent, darkcolor=accent)
         self.style.map("TNotebook.Tab", foreground=[("selected", accent), ("active", FG)],
                        background=[("selected", PANEL), ("active", FIELD)])
         self.after(50, self._tick)

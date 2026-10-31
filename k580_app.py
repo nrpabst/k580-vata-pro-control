@@ -3,7 +3,9 @@
 Uses k580.py (wired vendor HID channel). Run with:  pythonw k580_app.py
 Changes are written to the keyboard immediately and stored on it.
 """
+import colorsys
 import json
+import math
 import os
 import sys
 import time
@@ -239,6 +241,104 @@ class KeyboardView(tk.Canvas):
                 self.itemconfig(r, fill=fill, outline=accent, width=2)
             else:
                 self.itemconfig(r, fill=fill, outline=k580_theme.BORDER, width=1)
+
+
+class ColorPicker(ttk.Frame):
+    """Preset colour swatches, a small hue/saturation wheel, a brightness slider and a preview."""
+
+    PRESETS = [(255, 0, 0), (255, 96, 0), (255, 200, 0), (0, 255, 0), (0, 255, 160), (0, 220, 255),
+               (0, 64, 255), (128, 0, 255), (255, 0, 200), (255, 255, 255), (255, 140, 80), (0, 0, 0)]
+    WHEEL = 104
+
+    def __init__(self, master, on_pick):
+        super().__init__(master)
+        self.on_pick = on_pick
+        self.hsv = [0.0, 1.0, 1.0]
+
+        sw = ttk.Frame(self)
+        sw.grid(row=0, column=0, sticky="nw")
+        for n, rgb in enumerate(self.PRESETS):
+            c = tk.Canvas(sw, width=26, height=26, bg=k580_theme.PANEL, highlightthickness=0, cursor="hand2")
+            c.create_rectangle(2, 2, 24, 24, fill="#%02x%02x%02x" % rgb,
+                               outline=k580_theme.BORDER if rgb != (0, 0, 0) else k580_theme.MUTED)
+            if rgb == (0, 0, 0):
+                c.create_line(5, 21, 21, 5, fill=k580_theme.MUTED)          # "off"
+            c.grid(row=n // 6, column=n % 6, padx=2, pady=2)
+            c.bind("<Button-1>", lambda e, v=rgb: self.pick(v))
+
+        self.preview = tk.Canvas(sw, width=176, height=24, bg=k580_theme.PANEL, highlightthickness=0)
+        self.preview.grid(row=2, column=0, columnspan=6, pady=(8, 0), sticky="w")
+        self.prev_rect = self.preview.create_rectangle(2, 2, 60, 22, fill="#ff0000", outline=k580_theme.BORDER)
+        self.prev_text = self.preview.create_text(68, 12, text="#FF0000", anchor="w", fill=k580_theme.FG,
+                                                  font=("Consolas", 9))
+
+        size = self.WHEEL
+        self.wheel = tk.Canvas(self, width=size, height=size, bg=k580_theme.PANEL, highlightthickness=0,
+                               cursor="crosshair")
+        self.wheel.grid(row=0, column=1, padx=(18, 0), sticky="n")
+        self.img = tk.PhotoImage(width=size, height=size)
+        self._draw_wheel()
+        self.wheel.create_image(0, 0, image=self.img, anchor="nw")
+        self.marker = self.wheel.create_oval(0, 0, 0, 0, outline="#ffffff", width=2)
+        self.wheel.bind("<Button-1>", self._wheel_click)
+        self.wheel.bind("<B1-Motion>", self._wheel_click)
+
+        self.val = tk.DoubleVar(value=1.0)
+        vs = ttk.Scale(self, from_=1.0, to=0.0, variable=self.val, orient="vertical", length=size,
+                       command=lambda v: self._from_hsv())
+        vs.grid(row=0, column=2, padx=(8, 0), sticky="n")
+        self._place_marker()
+
+    def _draw_wheel(self):
+        size = self.WHEEL
+        r0 = size / 2
+        bg = k580_theme.PANEL
+        rows = []
+        for y in range(size):
+            row = []
+            for x in range(size):
+                dx, dy = x - r0 + 0.5, y - r0 + 0.5
+                d = math.hypot(dx, dy) / r0
+                if d > 1:
+                    row.append(bg)
+                else:
+                    h = (math.atan2(-dy, dx) / (2 * math.pi)) % 1.0
+                    row.append(k580_theme.hue_hex(h, d, 1.0))
+            rows.append("{" + " ".join(row) + "}")
+        self.img.put(" ".join(rows))
+
+    def _wheel_click(self, e):
+        r0 = self.WHEEL / 2
+        dx, dy = e.x - r0, e.y - r0
+        d = min(math.hypot(dx, dy) / r0, 1.0)
+        self.hsv[0] = (math.atan2(-dy, dx) / (2 * math.pi)) % 1.0
+        self.hsv[1] = d
+        self._place_marker()
+        self._from_hsv()
+
+    def _place_marker(self):
+        r0 = self.WHEEL / 2
+        a = self.hsv[0] * 2 * math.pi
+        x = r0 + math.cos(a) * self.hsv[1] * r0
+        y = r0 - math.sin(a) * self.hsv[1] * r0
+        self.wheel.coords(self.marker, x - 5, y - 5, x + 5, y + 5)
+
+    def _from_hsv(self):
+        r, g, b = colorsys.hsv_to_rgb(self.hsv[0], self.hsv[1], self.val.get())
+        self._show((int(r * 255), int(g * 255), int(b * 255)))
+
+    def pick(self, rgb):
+        h, s, v = colorsys.rgb_to_hsv(*(c / 255 for c in rgb))
+        self.hsv = [h, s, v]
+        self.val.set(v)
+        self._place_marker()
+        self._show(rgb)
+
+    def _show(self, rgb):
+        hx = "#%02x%02x%02x" % rgb
+        self.preview.itemconfig(self.prev_rect, fill=hx)
+        self.preview.itemconfig(self.prev_text, text=hx.upper() if rgb != (0, 0, 0) else "off")
+        self.on_pick(rgb)
 
 
 class App(tk.Tk):
@@ -952,15 +1052,28 @@ class App(tk.Tk):
         nb.add(f, text="Key colors")
         self.key_colors = {}            # matrix index -> (r, g, b)
         self.ckb = KeyboardView(f, on_click=lambda i: None)
-        self.ckb.grid(row=0, column=0, columnspan=4, pady=4)
-        ttk.Button(f, text="Pick color for selected...", command=self.pick_color).grid(row=1, column=0, sticky="w")
-        ttk.Button(f, text="Select all", command=lambda: self.ckb.select_all(True)).grid(row=1, column=1, sticky="w")
-        ttk.Button(f, text="Select none", command=lambda: self.ckb.select_all(False)).grid(row=1, column=2, sticky="w")
-        ttk.Button(f, text="Save to keyboard", command=self.save_colors, style="Accent.TButton") \
-            .grid(row=1, column=3, sticky="e")
-        ttk.Label(f, text="Click keys to select them, pick a color, then Save. Saving switches the\n"
-                          "lighting effect to Self-define (your colors). Needs the cable.",
-                  style="Muted.TLabel").grid(row=2, column=0, columnspan=4, sticky="w", pady=6)
+        self.ckb.grid(row=0, column=0, columnspan=3, pady=4)
+
+        self.picker = ColorPicker(f, on_pick=self.apply_color)
+        self.picker.grid(row=1, column=0, rowspan=3, sticky="nw", pady=(6, 0))
+
+        side = ttk.Frame(f)
+        side.grid(row=1, column=1, sticky="nw", padx=(16, 0), pady=(6, 0))
+        ttk.Button(side, text="Select all", command=lambda: self.ckb.select_all(True)).pack(fill="x", pady=2)
+        ttk.Button(side, text="Select none", command=lambda: self.ckb.select_all(False)).pack(fill="x", pady=2)
+        ttk.Button(side, text="Save to keyboard", command=self.save_colors, style="Accent.TButton") \
+            .pack(fill="x", pady=(14, 2))
+        ttk.Label(f, text="Click keys to select them, then click a colour: it's applied to the\n"
+                          "selected keys right away. Save sends them to the keyboard and switches\n"
+                          "the effect to Self-define. Needs the cable.",
+                  style="Muted.TLabel").grid(row=4, column=0, columnspan=3, sticky="w", pady=8)
+
+    def apply_color(self, rgb):
+        if not self.ckb.selected:
+            return
+        for idx in self.ckb.selected:
+            self.key_colors[idx] = rgb
+        self.ckb.set_fills(self.key_colors)
 
     def load_colors(self):
         if not self.kb:
@@ -970,17 +1083,6 @@ class App(tk.Tk):
         for idx in self.ckb.rects:
             self.key_colors[idx] = (planes[idx], planes[n + idx], planes[2 * n + idx])
         self.ckb.set_fills(self.key_colors)
-
-    def pick_color(self):
-        from tkinter import colorchooser
-        if not self.ckb.selected:
-            messagebox.showinfo("K580", "Click one or more keys first.")
-            return
-        rgb, _ = colorchooser.askcolor(title="Key color")
-        if rgb:
-            for idx in self.ckb.selected:
-                self.key_colors[idx] = tuple(int(v) for v in rgb)
-            self.ckb.set_fills(self.key_colors)
 
     def save_colors(self):
         if not self.need_kb():
