@@ -724,7 +724,10 @@ class App(tk.Tk):
         messagebox.showinfo("K580", "Done. Installed now: " + self.fw_state.cget("text"))
 
     def snap_slider(self, parent, var, steps=4, length=260):
-        """A slider that moves freely while dragged and eases onto the nearest 25% mark on release."""
+        """A slider that moves freely and stays where you drop it, with 0-100% marks underneath.
+
+        The keyboard itself only has 5 levels per setting, so the nearest one is sent.
+        """
         box = ttk.Frame(parent)
         sc = ttk.Scale(box, from_=0, to=steps, variable=var, length=length)
         sc.pack(anchor="w")
@@ -741,19 +744,7 @@ class App(tk.Tk):
 
         def release(_e):
             k580_theme.DRAGGING = False
-            start, target = var.get(), round(var.get())
-            frames = 8
-
-            def step(n=1):
-                t = n / frames
-                ease = 1 - (1 - t) ** 3             # ease-out: quick start, soft landing
-                var.set(start + (target - start) * ease)
-                if n < frames:
-                    self.after(15, step, n + 1)
-                else:
-                    var.set(target)
-                    self.apply_lighting()
-            step()
+            self.apply_lighting(keep_sliders=True)
 
         sc.bind("<ButtonPress-1>", press)
         sc.bind("<ButtonRelease-1>", release)
@@ -772,7 +763,7 @@ class App(tk.Tk):
             self.color.set(k580.COLORS[b & 7])
         self.load_settings()
 
-    def apply_lighting(self, new_effect=False):
+    def apply_lighting(self, new_effect=False, keep_sliders=False):
         if not (self.kb or self.wl):
             self.need_kb()
             return
@@ -793,7 +784,7 @@ class App(tk.Tk):
         finally:
             self.config(cursor="")
         self.led = led
-        if slot is not None:
+        if slot is not None and not keep_sliders:     # after a drag, leave the handles where they were dropped
             b = led[0x3B + 2 * slot]
             self.bright.set(led[0x3A + 2 * slot])
             self.speed.set(b >> 4)

@@ -81,6 +81,7 @@ def apply(root):
     for sc in ("Horizontal.TScale", "Vertical.TScale"):
         st.configure(sc, background=MUTED, troughcolor="#090a0d", bordercolor=BORDER,
                      lightcolor=MUTED, darkcolor=MUTED, sliderthickness=18, troughrelief="flat")
+        st.map(sc, background=[("pressed", MUTED), ("active", MUTED)])
     # scrollbars (e.g. in long drop-down lists)
     for sb in ("Vertical.TScrollbar", "Horizontal.TScrollbar"):
         st.configure(sb, background=FIELD_HI, troughcolor=BG, bordercolor=BG, arrowcolor=FG,
@@ -147,6 +148,10 @@ class RGBHeader(tk.Canvas):
         if not DRAGGING:          # restyling a slider mid-drag makes its handle jump
             for sc in ("Horizontal.TScale", "Vertical.TScale"):
                 self.style.configure(sc, background=accent, lightcolor=accent, darkcolor=accent)
+                # clam paints a pressed/hovered handle near-white by default: keep it the accent colour
+                self.style.map(sc, background=[("pressed", accent), ("active", accent)],
+                               lightcolor=[("pressed", accent), ("active", accent)],
+                               darkcolor=[("pressed", accent), ("active", accent)])
         self.style.map("TNotebook.Tab", foreground=[("selected", accent), ("active", FG)],
                        background=[("selected", PANEL), ("active", FIELD)])
         self.after(50, self._tick)
