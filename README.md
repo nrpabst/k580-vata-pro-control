@@ -41,9 +41,9 @@ from the Lighting page.
   firmware, checks that it's the exact version the patch was made for (by checksum), and saves an
   untouched copy for undo. Only then does it apply the patch and write it back. If the check fails,
   nothing is changed.
-- Flashing uses [sinowisp](https://github.com/karstx/sinowisp), an open-source SinoWealth ISP tool.
-  Download its Windows release and put `sinowisp.exe` next to `k580_app.py`. The app also asks for it
-  if it can't find it.
+- Flashing uses [sinowisp](https://github.com/karstx/sinowisp) v2.1.0, an open-source (MIT) SinoWealth ISP
+  tool. It's bundled in `third_party/sinowisp/` (unmodified official release; checksum and license there),
+  so there's nothing extra to download.
 - Installing resets the keyboard's settings. The app saves them first and puts them back.
 - **Uninstall** on the Firmware page writes your saved original back.
 - Side effect: the patch drops a hidden WASD/arrow-swap mode that no key on the K580 is set up to use.
@@ -74,3 +74,4 @@ python k580.py live 5 0=ff0000       # light Esc red for 5 seconds (live mode)
 | `k580_patch.py` | Firmware patch definition and installer helpers |
 | `k580_layout.py` | Key positions for drawing the keyboard |
 | `K580 Control.bat` | Double-click launcher |
+| `third_party/sinowisp/` | Bundled flasher (sinowisp v2.1.0, MIT) used by the Firmware page |

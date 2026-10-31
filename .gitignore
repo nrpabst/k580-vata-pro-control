@@ -8,5 +8,5 @@ firmware/
 *.hex
 *.bin
 
-# Flasher binary (download it from its own releases page)
-sinowisp.exe
+# Keep the bundled flasher binary
+!third_party/sinowisp/sinowisp.exe

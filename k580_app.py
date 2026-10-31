@@ -403,7 +403,8 @@ class App(tk.Tk):
         self.refresh_media_state()
 
     def find_sinowisp(self):
-        for p in (os.path.join(HERE, "sinowisp.exe"), os.path.join(HERE, "tools", "sinowisp.exe")):
+        for p in (os.path.join(HERE, "third_party", "sinowisp", "sinowisp.exe"),
+                  os.path.join(HERE, "sinowisp.exe")):
             if os.path.exists(p):
                 return p
         messagebox.showinfo("K580", "Pick sinowisp.exe (the open-source SinoWealth flasher, "
