@@ -1,11 +1,12 @@
 """Media-key light patch for the Redragon K580RGB-PRO (firmware 0x18).
 
 No Redragon firmware is shipped. The installer reads the keyboard's own firmware with sinowisp,
-checks that it's the exact stock version this patch was made for, changes 9 bytes, and
+checks that it's the exact stock version this patch was made for, patches it, and
 writes it back. The untouched read is kept as the user's personal roll-back image.
 
 What the patch does: the media-key lights stay on unless lighting byte 0x11 is set,
 so an app can switch them with a normal lighting write (see PROTOCOL.md, section 8b).
+It also turns the 5 brightness levels (0-4) into 21 (0-20, 5% steps): see BRIGHTNESS_LEVELS.
 """
 import hashlib
 import os
@@ -30,7 +31,30 @@ PATCH = [
     # 0F6A: MOV DPTR,#0x3B9 ; MOVX A,@DPTR ; JNZ on
     # 0F70: MOV DPTR,#0x3CF (lighting byte 0x30) ; MOVX A,@DPTR ; JZ off
     # 0F76: on:  LJMP 0x2ADE      0F79: off: LJMP 0x2AE9
+
+    # Fine brightness. Stock turns the level (0-4) into 0/20/40/60/80 with a table at 0x311D and
+    # scales every LED by that /80. Patched, the level is 0-20 and simply multiplied by 4.
+    (0x9751, "90311d93", "75f004a4"),               # MOV B,#4 ; MUL AB  instead of the table lookup
+    (0x1F23, "900190e090a21893ff", "120f7c000000000000"),  # per-effect max level: LCALL 0x0F7C
+    (0x85D8, "900190e090a21893ff", "120f7c000000000000"),  # (same, brightness-cycle key)
+    (0x85ED, "900190", "020f8a"),                   # Fn brightness up: LJMP 0x0F8A (+5 = 25%)
+    (0x860C, "900d13", "020fa7"),                   # Fn brightness down: LJMP 0x0FA7 (-5)
+    (0x669F, "9404", "9414"),                       # brightness wheel: max level 4 -> 20
+    (0x66AC, "6404", "6414"),
+    (0x258A, "7404", "7414"),                       # reset defaults: full brightness = 20
+    (0x25A8, "7404", "7414"),
+    # More of the unused WASD remap code:
+    # 0F7C max:  R7 = stock max (table 0xA218, 0 or 4) * 5 ; RET
+    # 0F8A up:   level = min(level + 5, max) ; SETB 0x30 ; at max -> 0x861C (flash) else 0x862B
+    # 0FA7 down: level = max(level - 5, 0)   ; SETB 0x30 ; at 0   -> 0x861C (flash) else 0x862B
+    (0x0F7C, "07900d0f74508040efb40f07900d0f74518035efb41507900d0f744f802aefb45e07900d0f741a801fefb459"
+             "07900d0f74048014efb45f07900d0f74168009ef",
+             "900190e090a2189375f005a4ff22"
+             "120f7c900d13e02405fed39f4002effeeef0d2306f700302861c02862b"
+             "900d13e0c394055001e4f0d230700302861c02862b"),
 ]
+BRIGHTNESS_LEVELS = 20            # patched firmware: brightness 0-20 (stock: 0-4)
+BRIGHTNESS_SITE = (0x9751, bytes.fromhex("75f004a4"))
 WHEEL_LIGHT_BYTE = 0x30           # lighting-block byte: non-zero keeps the wheel-mode key lit
 MEDIA_LIGHT_BYTE = 0x11           # lighting-block byte: zero keeps the media-key lights lit
 

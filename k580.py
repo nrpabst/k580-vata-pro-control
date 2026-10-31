@@ -114,16 +114,27 @@ class K580:
         out = bytearray()
         count = (size + CHUNK - 1) // CHUNK
         for i in range(count):
-            n = min(CHUNK, size - len(out))
-            self._set(self._req(op, sub, count, i, n))
-            time.sleep(0.02)
-            reply = bytearray(REPORT_LEN)
-            reply[0] = REPORT_ID
-            buf = (ctypes.c_ubyte * REPORT_LEN).from_buffer(reply)
-            if not _hid.HidD_GetFeature(self.h, buf, REPORT_LEN):
-                raise OSError(ctypes.get_last_error(), f"GetFeature op=0x{op:02x}")
-            out += reply[8:8 + n]
+            out += self.read_chunk(op, i, count, min(CHUNK, size - len(out)), sub)
         return bytes(out)
+
+    def read_chunk(self, op, index, count, n=CHUNK, sub=0):
+        """Read chunk `index` of a `count`-chunk read. The keyboard serves any chunk on its own,
+        so e.g. a few bytes of the 64 KB flash dump (0x88) don't need the whole dump."""
+        self._set(self._req(op, sub, count, index, n))
+        time.sleep(0.02)
+        reply = bytearray(REPORT_LEN)
+        reply[0] = REPORT_ID
+        buf = (ctypes.c_ubyte * REPORT_LEN).from_buffer(reply)
+        if not _hid.HidD_GetFeature(self.h, buf, REPORT_LEN):
+            raise OSError(ctypes.get_last_error(), f"GetFeature op=0x{op:02x}")
+        return bytes(reply[8:8 + n])
+
+    def read_flash(self, addr, n):
+        """`n` bytes of MCU flash at `addr` (the 0x88 dump is rotated by 0x1CA)."""
+        off = (addr - 0x1CA) % 0x10000
+        first, last = off // CHUNK, (off + n - 1) // CHUNK
+        data = b"".join(self.read_chunk(0x88, i, 0x10000 // CHUNK) for i in range(first, last + 1))
+        return data[off - first * CHUNK:off - first * CHUNK + n]
 
     def _req(self, op, sub, count, index, n):
         pkt = self._packet(op, sub, count, index, b"")

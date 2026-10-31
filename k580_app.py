@@ -504,7 +504,7 @@ class App(tk.Tk):
         ec.grid(row=0, column=1, sticky="w")
         ec.bind("<<ComboboxSelected>>", lambda e: self.apply_lighting(new_effect=True))
         ttk.Label(f, text="Brightness").grid(row=1, column=0, sticky="w", pady=4)
-        self.snap_slider(f, self.bright).grid(row=1, column=1, sticky="w")
+        self.snap_slider(f, self.bright, self.brightness_levels).grid(row=1, column=1, sticky="w")
         ttk.Label(f, text="Speed").grid(row=2, column=0, sticky="w", pady=4)
         self.snap_slider(f, self.speed).grid(row=2, column=1, sticky="w")
         ttk.Label(f, text="Color").grid(row=3, column=0, sticky="w", pady=4)
@@ -530,7 +530,8 @@ class App(tk.Tk):
     FIRMWARE_NOTE = (
         "The custom firmware lets you keep the media-key and volume-key lights on all the\n"
         "time, instead of them only flashing when pressed. You turn them on or off on the\n"
-        "Lighting page.\n\n"
+        "Lighting page. It also gives brightness 20 steps instead of 4, so you can set it\n"
+        "to any 5%.\n\n"
         "Installing takes about a minute. Plug in the cable and switch wireless off first.\n"
         "Your settings are kept, and Uninstall puts the original firmware back.")
 
@@ -561,42 +562,54 @@ class App(tk.Tk):
     MARKER = os.path.join(HERE, "firmware", "installed-switch-firmware.txt")
 
     def firmware_variant(self):
-        raw = self.kb.read(0x88, 0x2C00)          # flash dump is rotated by 0x1CA
-        site = raw[0x2B00 - 0x1CA:0x2B00 - 0x1CA + 2]
+        """Which firmware the cabled keyboard runs (cached per connection)."""
+        if getattr(self, "_variant_for", None) is not self.kb:
+            self._variant_for, self._variant = self.kb, self._read_variant()
+        return self._variant
+
+    def _read_variant(self):
+        import k580_patch
+        flash = self.kb.read_flash
+        site = flash(0x2B00, 2)
         if site == b"\x20\x27":
-            wheel = raw[0x2AD8 - 0x1CA:0x2AD8 - 0x1CA + 3] == b"\x02\x0f\x6a"
-            return "switch" if wheel else "switch-old"
+            if flash(0x2AD8, 3) != b"\x02\x0f\x6a":
+                return "switch-old"
+            addr, code = k580_patch.BRIGHTNESS_SITE
+            return "switch" if flash(addr, len(code)) == code else "switch-nobright"
         if site == b"\x20\x6e":
             return "toggle"
-        if raw[0x2AFE - 0x1CA] == 0x80:
+        if flash(0x2AFE, 1)[0] == 0x80:
             return "always"
         return "stock"
 
     def refresh_media_state(self):
         if self.kb:
             v = self.firmware_variant()
-            if v == "switch":
+            if v.startswith("switch"):
                 os.makedirs(os.path.dirname(self.MARKER), exist_ok=True)
-                open(self.MARKER, "w").write("switch\n")
+                open(self.MARKER, "w").write(v + "\n")
             elif os.path.exists(self.MARKER):
                 os.remove(self.MARKER)
         else:
-            v = "switch" if os.path.exists(self.MARKER) else "unknown"
+            v = self.marker_variant() or "unknown"
         led = self.led or self.get_led()
         self.fw_state.config(text={"switch": "Custom firmware",
+                                   "switch-nobright": "Custom (older version, 5 brightness levels)",
                                    "switch-old": "Custom (older version, no volume-key option)",
                                    "always": "Custom (older 'always on' version)",
                                    "toggle": "Custom (older toggle version)",
                                    "stock": "Stock Redragon firmware",
                                    "unknown": "(connect the cable to check)"}[v])
-        old = ("always", "toggle", "switch-old")
-        self.media_on.set(led[self.MEDIA_BYTE] == 0 if v in ("switch", "switch-old") else v == "always")
-        self.media_toggle.config(state="normal" if v in ("switch", "switch-old") else "disabled")
-        self.wheel_on.set(v == "switch" and led[self.WHEEL_BYTE] != 0)
-        self.wheel_toggle.config(state="normal" if v == "switch" else "disabled")
+        switch, wheel = v.startswith("switch"), v in ("switch", "switch-nobright")
+        self.media_on.set(led[self.MEDIA_BYTE] == 0 if switch else v == "always")
+        self.media_toggle.config(state="normal" if switch else "disabled")
+        self.wheel_on.set(wheel and led[self.WHEEL_BYTE] != 0)
+        self.wheel_toggle.config(state="normal" if wheel else "disabled")
         self.media_note.config(text={
             "switch": "When off, media keys flash when pressed and the volume/brightness key\n"
                       "lights only in brightness mode (like stock).",
+            "switch-nobright": "When off, media keys flash when pressed and the volume/brightness key\n"
+                               "lights only in brightness mode (like stock).",
             "switch-old": "Update the custom firmware (Firmware page) for the volume-key option.",
             "always": "Your current custom firmware keeps the media lights on permanently.\n"
                       "Update it from the Firmware page to get these options.",
@@ -610,6 +623,25 @@ class App(tk.Tk):
             "stock": "", "switch": "",
             "unknown": "Connect the cable (wireless switch off) and click Reconnect to check.",
         }.get(v, "This is an older custom version. Uninstall, then Install, to get the latest."))
+
+    def marker_variant(self):
+        try:
+            return open(self.MARKER).read().strip() or None
+        except OSError:
+            return None
+
+    def brightness_levels(self):
+        """Brightness steps the keyboard has: 20 (5% each) on the latest custom firmware, else 4."""
+        import k580_patch
+        v = self.firmware_variant() if self.kb else self.marker_variant()
+        return k580_patch.BRIGHTNESS_LEVELS if v == "switch" else 4
+
+    @staticmethod
+    def scale_brightness(led, convert):
+        """Rewrite every effect's brightness level (low 5 bits of lighting byte 0x38 + 2 * hw id)."""
+        for hw in range(1, 22):
+            a = 0x38 + 2 * hw
+            led[a] = (led[a] & 0xE0) | convert(led[a] & 0x1F)
 
     def set_wheel_led(self):
         led = bytearray(self.led or self.get_led())
@@ -669,6 +701,7 @@ class App(tk.Tk):
             return
         self.config(cursor="watch")
         self.update()
+        fine_before = self.firmware_variant() == "switch"
         saved = k580.backup(self.kb)
         saved["macro_area"] = self.kb.read(0x80 | k580.OP_MACRO, 2048).hex()
         os.makedirs(os.path.join(HERE, "backups"), exist_ok=True)
@@ -716,6 +749,12 @@ class App(tk.Tk):
         time.sleep(1)
         led = bytearray.fromhex(saved["led"])
         led[self.MEDIA_BYTE] = 0          # start with the lights on (and WASD swap off on stock)
+        # brightness is 0-4 on stock and older custom firmware, 0-20 on the latest custom firmware
+        fine_after = self.firmware_variant() == "switch"
+        if fine_after and not fine_before:
+            self.scale_brightness(led, lambda v: min(v, 4) * 5)
+        elif fine_before and not fine_after:
+            self.scale_brightness(led, lambda v: min(4, (v + 2) // 5))
         saved["led"] = led.hex()
         k580.restore(self.kb, saved)
         self.kb.write(k580.OP_MACRO, bytes.fromhex(saved["macro_area"]))
@@ -723,11 +762,12 @@ class App(tk.Tk):
         self.load_lighting()
         messagebox.showinfo("K580", "Done. Installed now: " + self.fw_state.cget("text"))
 
-    def snap_slider(self, parent, var, steps=4, length=260):
-        """A slider that moves freely while dragged and eases onto the nearest 25% mark on release.
+    def snap_slider(self, parent, var, levels=lambda: 4, length=260):
+        """A slider that moves freely while dragged and eases onto the nearest level on release.
 
-        The keyboard itself only has 5 levels per setting (0-4). Drawn on a canvas rather than
-        ttk.Scale, because recolouring a ttk.Scale for the RGB accent makes its handle jump.
+        `var` holds the keyboard's own level, 0..levels(): 0-4 on stock firmware, brightness 0-20
+        on the custom firmware. Drawn on a canvas rather than ttk.Scale, because recolouring a
+        ttk.Scale for the RGB accent makes its handle jump.
         """
         thumb, h = 9, 18                            # half handle width, track height
         c = tk.Canvas(parent, width=length, height=h + 16, bg=k580_theme.PANEL, highlightthickness=0,
@@ -737,17 +777,19 @@ class App(tk.Tk):
         fill = c.create_rectangle(1, 1, 1, h - 2, width=0)
         handle = c.create_rectangle(0, 0, 0, 0, width=0)
         grips = [c.create_line(0, 0, 0, 0, fill="#090a0d") for _ in range(3)]
-        for i in range(steps + 1):
-            x = x0 + i * (x1 - x0) / steps
+        for i in range(5):
+            x = x0 + i * (x1 - x0) / 4
             c.create_line(x, h + 1, x, h + 5, fill=k580_theme.MUTED)
-            c.create_text(x, h + 11, text=f"{i * 100 // steps}%", fill=k580_theme.MUTED, font=("Segoe UI", 7))
+            c.create_text(x, h + 11, text=f"{i * 25}%", fill=k580_theme.MUTED, font=("Segoe UI", 7))
         anim = {"job": None, "grab": 0.0}
 
         def to_x(v):
-            return x0 + max(0.0, min(steps, v)) * (x1 - x0) / steps
+            n = levels()
+            return x0 + max(0.0, min(n, v)) * (x1 - x0) / n
 
         def to_v(x):
-            return max(0.0, min(steps, (x - x0) * steps / (x1 - x0)))
+            n = levels()
+            return max(0.0, min(n, (x - x0) * n / (x1 - x0)))
 
         def draw(*_):
             try:
@@ -802,7 +844,7 @@ class App(tk.Tk):
             var.set(to_v(e.x - anim["grab"]))
 
         def release(_e):
-            # the keyboard only has 5 levels, so glide onto the nearest 25% mark, then apply
+            # the keyboard has fixed levels, so glide onto the nearest one, then apply
             glide(round(var.get()), self.apply_lighting)
 
         c.bind("<ButtonPress-1>", press)
@@ -821,7 +863,7 @@ class App(tk.Tk):
         slot = effect_slot(hw)
         if slot is not None:
             b = self.led[0x3B + 2 * slot]
-            self.bright.set(self.led[0x3A + 2 * slot])
+            self.bright.set(min(self.led[0x3A + 2 * slot] & 0x1F, self.brightness_levels()))
             self.speed.set(b >> 4)
             self.color.set(k580.COLORS[b & 7])
         self.load_settings()
@@ -838,7 +880,7 @@ class App(tk.Tk):
         slot = effect_slot(hw)
         # switching effect keeps that effect's own saved brightness/speed/color
         if slot is not None and not new_effect:
-            led[0x3A + 2 * slot] = int(round(self.bright.get()))
+            led[0x3A + 2 * slot] = (led[0x3A + 2 * slot] & 0xE0) | int(round(self.bright.get()))
             led[0x3B + 2 * slot] = (int(round(self.speed.get())) << 4) | k580.COLORS.index(self.color.get() or "red")
         self.config(cursor="watch")
         self.update_idletasks()
@@ -849,7 +891,7 @@ class App(tk.Tk):
         self.led = led
         if slot is not None and not keep_sliders:     # after a drag, leave the handles where they were dropped
             b = led[0x3B + 2 * slot]
-            self.bright.set(led[0x3A + 2 * slot])
+            self.bright.set(min(led[0x3A + 2 * slot] & 0x1F, self.brightness_levels()))
             self.speed.set(b >> 4)
             self.color.set(k580.COLORS[b & 7])
 
