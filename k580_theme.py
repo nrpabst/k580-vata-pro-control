@@ -76,8 +76,14 @@ def apply(root):
     st.map("TNotebook.Tab", background=[("selected", PANEL), ("active", FIELD)],
            foreground=[("selected", FG), ("active", FG)], lightcolor=[("selected", PANEL)])
     st.configure("TSeparator", background=BORDER)
-    st.configure("Horizontal.TScale", background=FIELD, troughcolor=FIELD, bordercolor=BORDER,
-                 lightcolor=FIELD, darkcolor=FIELD)
+    # sliders: dark recessed track, bright handle (the handle colour follows the RGB accent)
+    st.configure("Horizontal.TScale", background=MUTED, troughcolor="#090a0d", bordercolor=BORDER,
+                 lightcolor=MUTED, darkcolor=MUTED, sliderthickness=18, troughrelief="flat")
+    # scrollbars (e.g. in long drop-down lists)
+    for sb in ("Vertical.TScrollbar", "Horizontal.TScrollbar"):
+        st.configure(sb, background=FIELD_HI, troughcolor=BG, bordercolor=BG, arrowcolor=FG,
+                     lightcolor=FIELD_HI, darkcolor=FIELD_HI, gripcount=0, arrowsize=13)
+        st.map(sb, background=[("active", MUTED), ("pressed", MUTED)])
     # combobox drop-down lists are plain Tk listboxes
     root.option_add("*TCombobox*Listbox.background", FIELD)
     root.option_add("*TCombobox*Listbox.foreground", FG)
@@ -129,6 +135,7 @@ class RGBHeader(tk.Canvas):
         self.style.map("Accent.TButton", background=[("active", hue_hex(self.phase, 0.45, 1.0)),
                                                      ("disabled", PANEL)],
                        foreground=[("disabled", "#4b5063")])
+        self.style.configure("Horizontal.TScale", background=accent, lightcolor=accent, darkcolor=accent)
         self.style.map("TNotebook.Tab", foreground=[("selected", accent), ("active", FG)],
                        background=[("selected", PANEL), ("active", FIELD)])
         self.after(50, self._tick)
