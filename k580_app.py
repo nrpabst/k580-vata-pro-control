@@ -379,6 +379,8 @@ class App(tk.Tk):
 
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True, padx=10, pady=(4, 10))
+        self.nb = nb
+        self.slider_busy = False
         self.build_lighting(nb)
         self.build_keys(nb)
         self.build_macros(nb)
@@ -399,6 +401,7 @@ class App(tk.Tk):
         self.tray = k580_tray.Tray()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.after(200, self.poll_tray)
+        self.after(1000, self.poll_lighting)
         if "--tray" in sys.argv:
             self.withdraw()
 
@@ -837,6 +840,7 @@ class App(tk.Tk):
         def press(e):
             if not c.enabled:
                 return
+            self.slider_busy = True
             stop_anim()
             hx = to_x(var.get())
             if abs(e.x - hx) <= thumb + 2:
@@ -853,7 +857,10 @@ class App(tk.Tk):
             if not c.enabled:
                 return
             # the keyboard has fixed levels, so glide onto the nearest one, then apply
-            glide(round(var.get()), self.apply_lighting)
+            def done():
+                self.slider_busy = False
+                self.apply_lighting()
+            glide(round(var.get()), done)
 
         c.enabled = True                            # False greys it out for effects that ignore it
         c.bind("<ButtonPress-1>", press)
@@ -867,6 +874,10 @@ class App(tk.Tk):
     def load_lighting(self):
         self.led = bytearray(self.get_led())
         self.refresh_media_state()
+        self.show_lighting()
+        self.load_settings()
+
+    def show_lighting(self):
         hw = self.led[10]
         self.effect.set(k580.EFFECTS.get(hw, "OFF"))
         self.show_effect_options(hw)
@@ -876,7 +887,21 @@ class App(tk.Tk):
             self.bright.set(min(self.led[0x3A + 2 * slot] & 0x1F, self.brightness_levels()))
             self.speed.set(b >> 4)
             self.color.set(k580.COLORS[b & 7])
-        self.load_settings()
+
+    def poll_lighting(self):
+        """Pick up changes made on the keyboard itself (Fn effect/brightness/speed/color keys)
+        while the Lighting page is showing."""
+        self.after(1000, self.poll_lighting)
+        if (self.state() != "normal" or self.slider_busy or not (self.kb or self.wl)
+                or self.nb.tab(self.nb.select(), "text") != "Lighting"):
+            return
+        try:
+            led = bytearray(self.get_led())
+        except Exception:
+            return
+        if self.led and led != self.led and led[0x7E:0x80] == b"\x5a\xa5":
+            self.led = led
+            self.show_lighting()
 
     def show_effect_options(self, hw):
         """Grey out speed/color for effects that ignore them (like the stock app hides them)."""
