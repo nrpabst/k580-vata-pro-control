@@ -94,6 +94,12 @@ def apply(root):
     return st
 
 
+def style_listbox(widget):
+    widget.configure(bg=FIELD, fg=FG, selectbackground=FIELD_HI, selectforeground=FG, relief="flat",
+                     highlightthickness=1, highlightbackground=BORDER, highlightcolor=MUTED, font=FONT,
+                     borderwidth=0)
+
+
 def style_text(widget):
     widget.configure(bg=FIELD, fg=FG, insertbackground=FG, relief="flat", highlightthickness=1,
                      highlightbackground=BORDER, highlightcolor=MUTED, font=("Consolas", 9))
@@ -129,6 +135,7 @@ class RGBHeader(tk.Canvas):
         for i, item in enumerate(self.bar):
             self.itemconfigure(item, fill=hue_hex(self.phase + i / max(n, 1)))
         accent = hue_hex(self.phase, 0.65, 1.0)
+        self.winfo_toplevel()._accent_phase = self.phase
         self.itemconfigure(self.sub_id, fill=accent)
         self.style.configure("Accent.TButton", background=accent, lightcolor=accent, darkcolor=accent,
                              bordercolor=accent)

@@ -171,11 +171,81 @@ def effect_slot(hw):
 
 
 # ---------------------------------------------------------------- app
+class KeyboardView(tk.Canvas):
+    """Clickable picture of the K580. Keys can be selected, filled with a colour, or marked."""
+
+    SCALE = 0.72
+    SHORT = {"Backspace": "Bksp", "CapsLock": "Caps", "LShift": "Shift", "RShift": "Shift",
+             "LCtrl": "Ctrl", "RCtrl": "Ctrl", "Insert": "Ins", "Delete": "Del", "NumLock": "NmLk",
+             "NumEnter": "Ent", "Space": "Space", "Media1": "Prev", "Media2": "Play", "Media3": "Next",
+             "K105": "Mode", "K114": "Wheel"}
+
+    def __init__(self, master, on_click, labels=True):
+        import k580_layout
+        s = self.SCALE
+        super().__init__(master, width=int(745 * s), height=int(240 * s), bg=k580_theme.BG,
+                         highlightthickness=0)
+        self.on_click = on_click
+        self.selected = set()
+        self.marked = set()
+        self.fills = {}
+        self.rects = {}
+        # keys that have no position in the layout file: G1-G5, mode/wheel keys, media keys
+        extra = [(6, "G1"), (23, "G2"), (29, "G3"), (41, "G4"), (47, "G5"),
+                 (77, "Mode"), (71, "Wheel"), (88, "Prev"), (113, "Play"), (125, "Next")]
+        layout = list(k580_layout.LAYOUT) + [(idx, 21 + n * 50 + (30 if n >= 5 else 0), 252,
+                                              21 + n * 50 + (30 if n >= 5 else 0) + 44, 277)
+                                             for n, (idx, _) in enumerate(extra)]
+        for idx, x1, y1, x2, y2 in layout:
+            r = self.create_rectangle(x1 * s, (y1 - 45) * s, x2 * s, (y2 - 45) * s,
+                                      fill=k580_theme.FIELD, outline=k580_theme.BORDER, width=1)
+            self.rects[idx] = r
+            items = [r]
+            name = k580.KEY_NAMES.get(idx, "")
+            name = self.SHORT.get(name, name)
+            if labels and len(name) <= 5:
+                items.append(self.create_text((x1 + x2) / 2 * s, ((y1 + y2) / 2 - 45) * s, text=name,
+                                              fill=k580_theme.MUTED, font=("Segoe UI", 6)))
+            for it in items:
+                self.tag_bind(it, "<Button-1>", lambda e, i=idx: self._click(i))
+        self.redraw()
+
+    def _click(self, idx):
+        self.selected ^= {idx}
+        self.redraw()
+        self.on_click(idx)
+
+    def select_all(self, on):
+        self.selected = set(self.rects) if on else set()
+        self.redraw()
+        self.on_click(None)
+
+    def set_fills(self, fills):
+        self.fills = dict(fills)
+        self.redraw()
+
+    def set_marked(self, marked):
+        self.marked = set(marked)
+        self.redraw()
+
+    def redraw(self):
+        accent = k580_theme.hue_hex(getattr(self.master.winfo_toplevel(), "_accent_phase", 0.5), 0.65)
+        for idx, r in self.rects.items():
+            c = self.fills.get(idx)
+            fill = "#%02x%02x%02x" % c if c else k580_theme.FIELD
+            if idx in self.selected:
+                self.itemconfig(r, fill=fill, outline="#ffffff", width=3)
+            elif idx in self.marked:
+                self.itemconfig(r, fill=fill, outline=accent, width=2)
+            else:
+                self.itemconfig(r, fill=fill, outline=k580_theme.BORDER, width=1)
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("K580 Control")
-        self.geometry("640x620")
+        self.geometry("640x720")
         self.resizable(False, False)
         self.kb = None
         self.wl = None
@@ -198,6 +268,11 @@ class App(tk.Tk):
         self.build_backup(nb)
         self.build_firmware(nb)
         self.connect()
+        if "--tab" in sys.argv:                  # e.g. --tab Macros (handy for screenshots)
+            want = sys.argv[sys.argv.index("--tab") + 1]
+            for t in nb.tabs():
+                if nb.tab(t, "text") == want:
+                    nb.select(t)
 
     # ---------------- connection
     def connect(self):
@@ -215,6 +290,7 @@ class App(tk.Tk):
                     json.dump(k580.backup(self.kb), fh, indent=1)
             self.load_lighting()
             self.load_colors()
+            self.load_macros()
             return
         except SystemExit:
             pass
@@ -644,45 +720,194 @@ class App(tk.Tk):
                     "Repeat until any key is pressed": (k580.MACRO_UNTIL_KEY, 1)}
 
     def build_macros(self, nb):
-        f = ttk.Frame(nb, padding=12)
+        f = ttk.Frame(nb, padding=10)
         nb.add(f, text="Macros")
+        self.macros = []                 # [(name, [4-byte events])] as stored on the keyboard
+        self.recorded = []
+        self.recording = False
         self.mname = tk.StringVar()
         self.mtext = tk.StringVar()
-        self.mkey = tk.StringVar()
         self.mmode = tk.StringVar(value="Play once")
         self.mcount = tk.IntVar(value=2)
-        self.recorded = []
-        keys = [f"{n}  (#{i})" for i, n in sorted(k580.KEY_NAMES.items(), key=lambda kv: kv[1])]
 
-        ttk.Label(f, text="Name").grid(row=0, column=0, sticky="w", pady=4)
-        ttk.Entry(f, textvariable=self.mname, width=20).grid(row=0, column=1, sticky="w")
-        ttk.Label(f, text="Record keys").grid(row=1, column=0, sticky="w", pady=4)
-        rf = ttk.Frame(f)
-        rf.grid(row=1, column=1, sticky="w")
-        self.rec_btn = ttk.Button(rf, text="● Record", command=self.toggle_record)
-        self.rec_btn.pack(side="left")
-        ttk.Button(rf, text="Clear", command=self.clear_recording).pack(side="left", padx=6)
-        self.rec_view = tk.Text(f, height=5, width=52, state="disabled", wrap="word")
-        k580_theme.style_text(self.rec_view)
-        self.rec_view.grid(row=2, column=0, columnspan=2, sticky="w", pady=4)
-        ttk.Label(f, text="...or text to type").grid(row=3, column=0, sticky="w", pady=4)
-        ttk.Entry(f, textvariable=self.mtext, width=30).grid(row=3, column=1, sticky="w")
-        ttk.Label(f, text="Playback").grid(row=4, column=0, sticky="w", pady=4)
-        pf = ttk.Frame(f)
-        pf.grid(row=4, column=1, sticky="w")
+        # keyboard picture: click keys to choose where macros go
+        self.mkb = KeyboardView(f, on_click=lambda i: self.refresh_macro_keys())
+        self.mkb.grid(row=0, column=0, columnspan=2, pady=(0, 4))
+        self.mkey_info = ttk.Label(f, text="Click keys on the keyboard to select them.", style="Muted.TLabel")
+        self.mkey_info.grid(row=1, column=0, columnspan=2, sticky="w")
+
+        # left: saved macros
+        left = ttk.Frame(f)
+        left.grid(row=2, column=0, sticky="nsw", padx=(0, 12), pady=6)
+        ttk.Label(left, text="Saved macros").pack(anchor="w")
+        self.mlist = tk.Listbox(left, height=7, width=22, activestyle="none", exportselection=False)
+        k580_theme.style_listbox(self.mlist)
+        self.mlist.pack(anchor="w", pady=4)
+        self.mlist.bind("<<ListboxSelect>>", lambda e: self.show_macro())
+        ttk.Button(left, text="Delete macro", command=self.delete_macro).pack(anchor="w")
+
+        # right: assign + new macro
+        right = ttk.Frame(f)
+        right.grid(row=2, column=1, sticky="nsew", pady=6)
+        ttk.Label(right, text="Playback").grid(row=0, column=0, sticky="w")
+        pf = ttk.Frame(right)
+        pf.grid(row=0, column=1, sticky="w")
         ttk.Combobox(pf, textvariable=self.mmode, values=list(self.REPEAT_MODES), state="readonly",
-                     width=28).pack(side="left")
+                     width=26).pack(side="left")
         ttk.Spinbox(pf, from_=2, to=255, textvariable=self.mcount, width=4).pack(side="left", padx=6)
-        ttk.Label(f, text="On key (normal layer)").grid(row=5, column=0, sticky="w", pady=4)
-        ttk.Combobox(f, textvariable=self.mkey, values=keys, state="readonly", width=28) \
-            .grid(row=5, column=1, sticky="w")
-        ttk.Button(f, text="Save macro to key", command=self.add_macro, style="Accent.TButton").grid(row=6, column=1, sticky="w", pady=8)
-        ttk.Button(f, text="Remove all app macros", command=self.clear_macros) \
-            .grid(row=7, column=1, sticky="w")
-        ttk.Label(f, text="While recording, type in this window; the delays between keys are kept.\n"
-                          "The number box is only used for 'Repeat N times'. G1-G5 macros are kept.",
-                  style="Muted.TLabel").grid(row=8, column=0, columnspan=2, sticky="w", pady=8)
-        self.recording = False
+        bf = ttk.Frame(right)
+        bf.grid(row=1, column=0, columnspan=2, sticky="w", pady=6)
+        ttk.Button(bf, text="Assign macro to selected keys", command=self.assign_macro,
+                   style="Accent.TButton").pack(side="left")
+        ttk.Button(bf, text="Clear selected keys", command=self.unassign_macro).pack(side="left", padx=6)
+
+        ttk.Separator(right).grid(row=2, column=0, columnspan=2, sticky="ew", pady=6)
+        ttk.Label(right, text="New macro").grid(row=3, column=0, sticky="w")
+        nf = ttk.Frame(right)
+        nf.grid(row=3, column=1, sticky="w")
+        ttk.Entry(nf, textvariable=self.mname, width=16).pack(side="left")
+        self.rec_btn = ttk.Button(nf, text="● Record", command=self.toggle_record)
+        self.rec_btn.pack(side="left", padx=6)
+        ttk.Button(nf, text="Clear", command=self.clear_recording).pack(side="left")
+        self.rec_view = tk.Text(right, height=3, width=44, state="disabled", wrap="word")
+        k580_theme.style_text(self.rec_view)
+        self.rec_view.grid(row=4, column=0, columnspan=2, sticky="w", pady=4)
+        ttk.Label(right, text="...or text").grid(row=5, column=0, sticky="w")
+        tf = ttk.Frame(right)
+        tf.grid(row=5, column=1, sticky="w")
+        ttk.Entry(tf, textvariable=self.mtext, width=22).pack(side="left")
+        ttk.Button(tf, text="Save macro", command=self.save_macro, style="Accent.TButton") \
+            .pack(side="left", padx=6)
+        ttk.Label(f, text="Keys with a macro are outlined in the accent colour. G1-G5 recordings aren't touched.",
+                  style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w")
+
+    def load_macros(self):
+        if not self.kb:
+            return
+        area = self.kb.read(0x80 | k580.OP_MACRO, 1024)
+        self.macros = [(n, [b[i:i + 4] for i in range(0, len(b), 4)]) for n, b in parse_macros(area)]
+        self.mlist.delete(0, "end")
+        for i, (n, ev) in enumerate(self.macros):
+            self.mlist.insert("end", f"{i + 1}. {n}  ({len(ev)} steps)")
+        self.refresh_macro_keys()
+
+    def _bindings(self):
+        """matrix index -> macro index, for layer 0."""
+        m = self.kb.get_matrix(0)
+        return {i: m[i * 4 + 3] for i in range(k580.MATRIX_KEYS) if m[i * 4] == 0x03}
+
+    def refresh_macro_keys(self):
+        if not self.kb:
+            return
+        binds = self._bindings()
+        self.mkb.set_marked(set(binds))
+        sel = sorted(self.mkb.selected)
+        if not sel:
+            self.mkey_info.config(text="Click keys on the keyboard to select them.")
+            return
+        parts = []
+        for i in sel:
+            name = k580.KEY_NAMES.get(i, f"#{i}")
+            j = binds.get(i)
+            parts.append(f"{name} → {self.macros[j][0]}" if j is not None and j < len(self.macros) else name)
+        self.mkey_info.config(text="Selected: " + ", ".join(parts))
+
+    def show_macro(self):
+        pass                                   # selection is read when assigning
+
+    def _write_macros(self):
+        area = bytearray(self.kb.read(0x80 | k580.OP_MACRO, 2048))
+        area[:1024] = k580.build_macro_buffer(self.macros)
+        self.kb.write(k580.OP_MACRO, bytes(area))
+        time.sleep(0.3)
+
+    def save_macro(self):
+        if not self.need_kb():
+            return
+        if self.recording:
+            self.toggle_record()
+        try:
+            if self.recorded:
+                events = [k580.macro_event(c, r, d) for c, r, d in self.recorded]
+            elif self.mtext.get():
+                events = text_to_events(self.mtext.get())
+            else:
+                messagebox.showinfo("K580", "Record some keys or enter text first.")
+                return
+        except ValueError as e:
+            messagebox.showerror("K580", str(e))
+            return
+        name = (self.mname.get() or self.mtext.get() or f"Macro {len(self.macros) + 1}")[:15]
+        self.macros.append((name, events))
+        try:
+            self._write_macros()
+        except ValueError as e:
+            self.macros.pop()
+            messagebox.showerror("K580", str(e))
+            return
+        self.clear_recording()
+        self.mname.set("")
+        self.mtext.set("")
+        self.load_macros()
+        self.mlist.selection_clear(0, "end")
+        self.mlist.selection_set("end")
+
+    def assign_macro(self):
+        if not self.need_kb():
+            return
+        pick = self.mlist.curselection()
+        if not pick or not self.mkb.selected:
+            messagebox.showinfo("K580", "Pick a saved macro and click one or more keys first.")
+            return
+        mode, count = self.REPEAT_MODES[self.mmode.get()]
+        entry = k580.macro_key(pick[0], count or max(1, self.mcount.get()), mode)
+        m = bytearray(self.kb.get_matrix(0))
+        for i in self.mkb.selected:
+            m[i * 4:i * 4 + 4] = entry
+        self.kb.write(k580.OP_MATRIX, bytes(m), sub=0)
+        time.sleep(0.2)
+        self.refresh_macro_keys()
+
+    def unassign_macro(self):
+        """Give the selected keys back their original function (from the first-run snapshot)."""
+        if not self.need_kb() or not self.mkb.selected:
+            return
+        path = os.path.join(HERE, "backups", "first-run.json")
+        orig = bytes.fromhex(json.load(open(path))["matrix"][0]) if os.path.exists(path) else None
+        m = bytearray(self.kb.get_matrix(0))
+        for i in self.mkb.selected:
+            m[i * 4:i * 4 + 4] = orig[i * 4:i * 4 + 4] if orig else bytes(4)
+        self.kb.write(k580.OP_MATRIX, bytes(m), sub=0)
+        time.sleep(0.2)
+        self.refresh_macro_keys()
+
+    def delete_macro(self):
+        if not self.need_kb():
+            return
+        pick = self.mlist.curselection()
+        if not pick:
+            return
+        k = pick[0]
+        if not messagebox.askyesno("K580", f"Delete macro '{self.macros[k][0]}'? Keys using it are cleared."):
+            return
+        del self.macros[k]
+        self._write_macros()
+        # keys bound to later macros shift down by one; keys bound to this one are cleared
+        for layer in range(k580.LAYERS):
+            m = bytearray(self.kb.get_matrix(layer))
+            changed = False
+            for i in range(128):
+                if m[i * 4] == 0x03:
+                    if m[i * 4 + 3] == k:
+                        m[i * 4:i * 4 + 4] = bytes(4)
+                        changed = True
+                    elif m[i * 4 + 3] > k:
+                        m[i * 4 + 3] -= 1
+                        changed = True
+            if changed:
+                self.kb.write(k580.OP_MATRIX, bytes(m), sub=layer)
+                time.sleep(0.1)
+        self.load_macros()
 
     def toggle_record(self):
         self.recording = not self.recording
@@ -721,78 +946,18 @@ class App(tk.Tk):
         self.rec_view.insert("end", text)
         self.rec_view.config(state="disabled")
 
-    def add_macro(self):
-        if not self.need_kb() or not self.mkey.get():
-            return
-        if self.recording:
-            self.toggle_record()
-        try:
-            if self.recorded:
-                events = [k580.macro_event(c, r, d) for c, r, d in self.recorded]
-            elif self.mtext.get():
-                events = text_to_events(self.mtext.get())
-            else:
-                messagebox.showinfo("K580", "Record some keys or enter text first.")
-                return
-        except ValueError as e:
-            messagebox.showerror("K580", str(e))
-            return
-        name = (self.mname.get() or self.mtext.get() or "macro")[:15]
-        area = bytearray(self.kb.read(0x80 | k580.OP_MACRO, 2048))
-        macros = [(n, [b[i:i + 4] for i in range(0, len(b), 4)]) for n, b in parse_macros(area[:1024])]
-        macros.append((name, events))
-        try:
-            area[:1024] = k580.build_macro_buffer(macros)
-        except ValueError as e:
-            messagebox.showerror("K580", str(e))
-            return
-        self.kb.write(k580.OP_MACRO, bytes(area))
-        time.sleep(0.3)
-        mode, count = self.REPEAT_MODES[self.mmode.get()]
-        i = int(self.mkey.get().split("#")[1].rstrip(")"))
-        m = bytearray(self.kb.get_matrix(0))
-        m[i * 4:i * 4 + 4] = k580.macro_key(len(macros) - 1, count or max(1, self.mcount.get()), mode)
-        self.kb.write(k580.OP_MATRIX, bytes(m), sub=0)
-        self.clear_recording()
-        messagebox.showinfo("K580", f"Macro '{name}' saved. Press the key to run it.")
-
-    def clear_macros(self):
-        if not self.need_kb():
-            return
-        if not messagebox.askyesno("K580", "Remove all app macros and unbind their keys?"):
-            return
-        area = bytearray(self.kb.read(0x80 | k580.OP_MACRO, 2048))
-        area[:1024] = bytes(1024)
-        self.kb.write(k580.OP_MACRO, bytes(area))
-        for layer in range(k580.LAYERS):
-            m = bytearray(self.kb.get_matrix(layer))
-            for i in range(128):
-                if m[i * 4] == 0x03:
-                    m[i * 4:i * 4 + 4] = bytes(4)
-            self.kb.write(k580.OP_MATRIX, bytes(m), sub=layer)
-            time.sleep(0.1)
-        messagebox.showinfo("K580", "App macros removed.")
-
     # ---------------- custom per-key colors
     def build_colors(self, nb):
-        import k580_layout
         f = ttk.Frame(nb, padding=8)
         nb.add(f, text="Key colors")
         self.key_colors = {}            # matrix index -> (r, g, b)
-        self.selected = set()
-        s = 0.72
-        self.canvas = tk.Canvas(f, width=int(745 * s), height=int(205 * s), bg=k580_theme.BG, highlightthickness=0)
-        self.canvas.grid(row=0, column=0, columnspan=4, pady=4)
-        self.rects = {}
-        for idx, x1, y1, x2, y2 in k580_layout.LAYOUT:
-            r = self.canvas.create_rectangle(x1 * s, (y1 - 45) * s, x2 * s, (y2 - 45) * s,
-                                             fill="#000", outline=k580_theme.BORDER, width=1)
-            self.rects[idx] = r
-            self.canvas.tag_bind(r, "<Button-1>", lambda e, i=idx: self.toggle_select(i))
+        self.ckb = KeyboardView(f, on_click=lambda i: None)
+        self.ckb.grid(row=0, column=0, columnspan=4, pady=4)
         ttk.Button(f, text="Pick color for selected...", command=self.pick_color).grid(row=1, column=0, sticky="w")
-        ttk.Button(f, text="Select all", command=lambda: self.select_all(True)).grid(row=1, column=1, sticky="w")
-        ttk.Button(f, text="Select none", command=lambda: self.select_all(False)).grid(row=1, column=2, sticky="w")
-        ttk.Button(f, text="Save to keyboard", command=self.save_colors, style="Accent.TButton").grid(row=1, column=3, sticky="e")
+        ttk.Button(f, text="Select all", command=lambda: self.ckb.select_all(True)).grid(row=1, column=1, sticky="w")
+        ttk.Button(f, text="Select none", command=lambda: self.ckb.select_all(False)).grid(row=1, column=2, sticky="w")
+        ttk.Button(f, text="Save to keyboard", command=self.save_colors, style="Accent.TButton") \
+            .grid(row=1, column=3, sticky="e")
         ttk.Label(f, text="Click keys to select them, pick a color, then Save. Saving switches the\n"
                           "lighting effect to Self-define (your colors). Needs the cable.",
                   style="Muted.TLabel").grid(row=2, column=0, columnspan=4, sticky="w", pady=6)
@@ -802,35 +967,20 @@ class App(tk.Tk):
             return
         planes = self.kb.get_color_group(0)
         n = k580.MATRIX_KEYS
-        for idx in self.rects:
+        for idx in self.ckb.rects:
             self.key_colors[idx] = (planes[idx], planes[n + idx], planes[2 * n + idx])
-        self.redraw_colors()
-
-    def redraw_colors(self):
-        for idx, r in self.rects.items():
-            c = self.key_colors.get(idx, (0, 0, 0))
-            sel = idx in self.selected
-            self.canvas.itemconfig(r, fill="#%02x%02x%02x" % c, outline="#ffffff" if sel else k580_theme.BORDER,
-                                   width=3 if sel else 1)
-
-    def toggle_select(self, idx):
-        self.selected ^= {idx}
-        self.redraw_colors()
-
-    def select_all(self, on):
-        self.selected = set(self.rects) if on else set()
-        self.redraw_colors()
+        self.ckb.set_fills(self.key_colors)
 
     def pick_color(self):
         from tkinter import colorchooser
-        if not self.selected:
+        if not self.ckb.selected:
             messagebox.showinfo("K580", "Click one or more keys first.")
             return
         rgb, _ = colorchooser.askcolor(title="Key color")
         if rgb:
-            for idx in self.selected:
+            for idx in self.ckb.selected:
                 self.key_colors[idx] = tuple(int(v) for v in rgb)
-            self.redraw_colors()
+            self.ckb.set_fills(self.key_colors)
 
     def save_colors(self):
         if not self.need_kb():
