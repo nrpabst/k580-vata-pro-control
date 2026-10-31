@@ -532,8 +532,7 @@ class App(tk.Tk):
     FIRMWARE_NOTE = (
         "The custom firmware lets you keep the media-key and volume-key lights on all the\n"
         "time, instead of them only flashing when pressed. You turn them on or off on the\n"
-        "Lighting page. It also gives brightness 20 steps instead of 4, so you can set it\n"
-        "to any 5%.\n\n"
+        "Lighting page.\n\n"
         "Installing takes about a minute. Plug in the cable and switch wireless off first.\n"
         "Your settings are kept, and Uninstall puts the original firmware back.")
 
@@ -576,8 +575,8 @@ class App(tk.Tk):
         if site == b"\x20\x27":
             if flash(0x2AD8, 3) != b"\x02\x0f\x6a":
                 return "switch-old"
-            addr, code = k580_patch.BRIGHTNESS_SITE
-            return "switch" if flash(addr, len(code)) == code else "switch-nobright"
+            addr, code = k580_patch.FINE_BRIGHTNESS_SITE
+            return "switch-fine" if flash(addr, len(code)) == code else "switch"
         if site == b"\x20\x6e":
             return "toggle"
         if flash(0x2AFE, 1)[0] == 0x80:
@@ -596,13 +595,13 @@ class App(tk.Tk):
             v = self.marker_variant() or "unknown"
         led = self.led or self.get_led()
         self.fw_state.config(text={"switch": "Custom firmware",
-                                   "switch-nobright": "Custom (older version, 5 brightness levels)",
+                                   "switch-fine": "Custom (test version with 20 brightness steps)",
                                    "switch-old": "Custom (older version, no volume-key option)",
                                    "always": "Custom (older 'always on' version)",
                                    "toggle": "Custom (older toggle version)",
                                    "stock": "Stock Redragon firmware",
                                    "unknown": "(connect the cable to check)"}[v])
-        switch, wheel = v.startswith("switch"), v in ("switch", "switch-nobright")
+        switch, wheel = v.startswith("switch"), v in ("switch", "switch-fine")
         self.media_on.set(led[self.MEDIA_BYTE] == 0 if switch else v == "always")
         self.media_toggle.config(state="normal" if switch else "disabled")
         self.wheel_on.set(wheel and led[self.WHEEL_BYTE] != 0)
@@ -610,7 +609,7 @@ class App(tk.Tk):
         self.media_note.config(text={
             "switch": "When off, media keys flash when pressed and the volume/brightness key\n"
                       "lights only in brightness mode (like stock).",
-            "switch-nobright": "When off, media keys flash when pressed and the volume/brightness key\n"
+            "switch-fine": "When off, media keys flash when pressed and the volume/brightness key\n"
                                "lights only in brightness mode (like stock).",
             "switch-old": "Update the custom firmware (Firmware page) for the volume-key option.",
             "always": "Your current custom firmware keeps the media lights on permanently.\n"
@@ -628,15 +627,16 @@ class App(tk.Tk):
 
     def marker_variant(self):
         try:
-            return open(self.MARKER).read().strip() or None
+            v = open(self.MARKER).read().strip()
+            return v if v in ("switch", "switch-fine", "switch-old") else ("switch" if v else None)
         except OSError:
             return None
 
     def brightness_levels(self):
-        """Brightness steps the keyboard has: 20 (5% each) on the latest custom firmware, else 4."""
+        """Brightness steps the keyboard has: 4, or 20 on the dropped fine-brightness test build."""
         import k580_patch
         v = self.firmware_variant() if self.kb else self.marker_variant()
-        return k580_patch.BRIGHTNESS_LEVELS if v == "switch" else 4
+        return k580_patch.FINE_BRIGHTNESS_LEVELS if v == "switch-fine" else 4
 
     @staticmethod
     def scale_brightness(led, convert):
@@ -703,7 +703,7 @@ class App(tk.Tk):
             return
         self.config(cursor="watch")
         self.update()
-        fine_before = self.firmware_variant() == "switch"
+        fine_before = self.firmware_variant() == "switch-fine"
         saved = k580.backup(self.kb)
         saved["macro_area"] = self.kb.read(0x80 | k580.OP_MACRO, 2048).hex()
         os.makedirs(os.path.join(HERE, "backups"), exist_ok=True)
@@ -751,8 +751,8 @@ class App(tk.Tk):
         time.sleep(1)
         led = bytearray.fromhex(saved["led"])
         led[self.MEDIA_BYTE] = 0          # start with the lights on (and WASD swap off on stock)
-        # brightness is 0-4 on stock and older custom firmware, 0-20 on the latest custom firmware
-        fine_after = self.firmware_variant() == "switch"
+        # brightness is 0-4, except 0-20 on the dropped fine-brightness test build
+        fine_after = self.firmware_variant() == "switch-fine"
         if fine_after and not fine_before:
             self.scale_brightness(led, lambda v: min(v, 4) * 5)
         elif fine_before and not fine_after:
