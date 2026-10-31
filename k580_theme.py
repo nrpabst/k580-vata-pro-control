@@ -21,16 +21,23 @@ def hue_hex(h, s=0.85, v=1.0):
 
 
 def dark_title_bar(root):
-    """Ask Windows 10 (1809+) / 11 to draw this window's title bar dark."""
+    """Ask Windows 10 (20H1+) / 11 to draw this window's title bar dark."""
     try:
         import ctypes
-        hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+        from ctypes import wintypes
+        root.update()                                # make sure the real window frame exists
+        user32, dwm = ctypes.windll.user32, ctypes.windll.dwmapi
+        dwm.DwmSetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+        hwnd = user32.GetParent(root.winfo_id()) or user32.FindWindowW(None, root.title())
         on = ctypes.c_int(1)
-        for attr in (20, 19):           # DWMWA_USE_IMMERSIVE_DARK_MODE (new id, then pre-20H1 id)
-            if ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(on), 4) == 0:
+        for attr in (20, 19):           # DWMWA_USE_IMMERSIVE_DARK_MODE (current id, then pre-20H1 id)
+            if dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(on), ctypes.sizeof(on)) == 0:
                 break
-        root.withdraw()                 # repaint the frame so the change shows immediately
-        root.deiconify()
+        # Windows 10 only repaints the caption on activation changes, so nudge it
+        user32.SendMessageW(hwnd, 0x0086, 0, 0)      # WM_NCACTIVATE off
+        user32.SendMessageW(hwnd, 0x0086, 1, 0)      # WM_NCACTIVATE on
+        # redraw the frame: NOSIZE | NOMOVE | NOZORDER | FRAMECHANGED
+        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0020)
     except Exception:
         pass
 
@@ -38,7 +45,7 @@ def dark_title_bar(root):
 def apply(root):
     """Style every ttk widget dark. Returns the ttk.Style."""
     root.configure(bg=BG)
-    root.after(0, lambda: dark_title_bar(root))
+    root.after(50, lambda: dark_title_bar(root))
     st = ttk.Style(root)
     st.theme_use("clam")
     st.configure(".", background=PANEL, foreground=FG, fieldbackground=FIELD, bordercolor=BORDER,
