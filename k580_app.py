@@ -17,6 +17,9 @@ import k580  # noqa: E402
 import k580_theme  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+APP_VERSION = "0.2.0"
+UPDATE_URL = "https://api.github.com/repos/nrpabst/k580-vata-pro-control/releases/latest"
+RELEASES_PAGE = "https://github.com/nrpabst/k580-vata-pro-control/releases"
 
 # ---------------------------------------------------------------- key codes
 HID = {}
@@ -345,7 +348,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("K580 Control")
-        self.geometry("640x720")
+        self.geometry("640x780")
         self.resizable(False, False)
         self.kb = None
         self.wl = None
@@ -366,6 +369,7 @@ class App(tk.Tk):
         self.build_macros(nb)
         self.build_colors(nb)
         self.build_backup(nb)
+        self.build_settings(nb)
         self.build_firmware(nb)
         self.connect()
         if "--tab" in sys.argv:                  # e.g. --tab Macros (handy for screenshots)
@@ -679,6 +683,7 @@ class App(tk.Tk):
             self.bright.set(self.led[0x3A + 2 * slot])
             self.speed.set(b >> 4)
             self.color.set(k580.COLORS[b & 7])
+        self.load_settings()
 
     def apply_lighting(self, new_effect=False):
         if not (self.kb or self.wl):
@@ -1091,6 +1096,162 @@ class App(tk.Tk):
         self.led = led
         self.load_lighting()
         messagebox.showinfo("K580", "Colors saved. Effect set to Self-define.")
+
+    # ---------------- settings page
+    SLEEP_OPTIONS = {"Keyboard default": 0, "1 minute": 2, "3 minutes": 6, "5 minutes": 10,
+                     "10 minutes": 20, "30 minutes": 60, "1 hour": 120}
+    DEBOUNCE_BYTE = 0x03       # lighting block byte the firmware copies into each key's debounce counter
+    SLEEP_BYTE = 0x18          # lighting block byte: sleep after value x 30 s idle (0 = firmware default)
+    RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+    def build_settings(self, nb):
+        f = ttk.Frame(nb, padding=14)
+        nb.add(f, text="Settings")
+        f.columnconfigure(1, weight=1)
+        row = 0
+
+        def section(title):
+            nonlocal row
+            ttk.Label(f, text=title, font=k580_theme.FONT_BOLD).grid(row=row, column=0, columnspan=2,
+                                                                     sticky="w", pady=(10 if row else 0, 2))
+            row += 1
+
+        def line(label, widget, note=None):
+            nonlocal row
+            ttk.Label(f, text=label).grid(row=row, column=0, sticky="w", pady=3, padx=(0, 16))
+            widget.grid(row=row, column=1, sticky="w", pady=3)
+            row += 1
+            if note:
+                ttk.Label(f, text=note, style="Muted.TLabel").grid(row=row, column=0, columnspan=2,
+                                                                   sticky="w", pady=(0, 4))
+                row += 1
+
+        section("Device")
+        self.info = ttk.Label(f, text="-", justify="left")
+        self.info.grid(row=row, column=0, columnspan=2, sticky="w")
+        row += 1
+        ttk.Label(f, text="Battery: the keyboard shows it on the number keys. Press Fn + Right Shift while\n"
+                          "it's in wireless mode (it doesn't report it to the PC).", style="Muted.TLabel") \
+            .grid(row=row, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        row += 1
+
+        section("Keyboard")
+        self.debounce = tk.IntVar(value=1)
+        db = ttk.Spinbox(f, from_=1, to=4, textvariable=self.debounce, width=4, state="readonly",
+                         command=self.set_debounce)
+        line("Key debounce", db,
+             "Raise this only if a key sometimes types twice from one press. Higher = more filtering,\n"
+             "but very slightly slower keys. 1 is the normal setting.")
+        self.sleep = tk.StringVar(value="Keyboard default")
+        sc = ttk.Combobox(f, textvariable=self.sleep, values=list(self.SLEEP_OPTIONS), state="readonly", width=18)
+        sc.bind("<<ComboboxSelected>>", lambda e: self.set_sleep())
+        line("Sleep after", sc,
+             "In wireless mode the keyboard turns itself off after this long without a key press,\n"
+             "to save battery. Any key wakes it up.")
+
+        section("App")
+        self.autostart = tk.BooleanVar(value=self._autostart_enabled())
+        line("Start with Windows", ttk.Checkbutton(f, variable=self.autostart, command=self.set_autostart),
+             "Opens this app when you sign in to Windows.")
+        line("Updates", ttk.Button(f, text="Check for updates", command=self.check_updates),
+             f"You have version {APP_VERSION}. Checks the project's GitHub page for a newer one.")
+
+        section("Reset")
+        line("Factory reset", ttk.Button(f, text="Reset keyboard to factory settings", command=self.factory_reset),
+             "Puts lighting, key assignments and macros back to how they came from the factory.\n"
+             "Your custom firmware (if installed) stays. Needs the cable.")
+
+    def load_settings(self):
+        conn = "cable" if self.kb else ("2.4G dongle" if self.wl else "not connected")
+        fw = f"0x{self.kb.firmware_version():04X}" if self.kb else "(connect the cable to read)"
+        self.info.config(text=f"Model: Redragon K580 VATA PRO\nConnection: {conn}\n"
+                              f"Firmware version: {fw}\nApp version: {APP_VERSION}")
+        if self.led:
+            self.debounce.set(max(1, min(4, self.led[self.DEBOUNCE_BYTE] or 1)))
+            v = self.led[self.SLEEP_BYTE]
+            self.sleep.set(next((k for k, n in self.SLEEP_OPTIONS.items() if n == v), f"{v * 30} seconds"))
+
+    def _set_led_byte(self, index, value):
+        if not (self.kb or self.wl):
+            self.need_kb()
+            return
+        led = bytearray(self.led or self.get_led())
+        led[index] = value
+        self._write_led(led)
+
+    def set_debounce(self):
+        self._set_led_byte(self.DEBOUNCE_BYTE, int(self.debounce.get()))
+
+    def set_sleep(self):
+        self._set_led_byte(self.SLEEP_BYTE, self.SLEEP_OPTIONS[self.sleep.get()])
+
+    def _autostart_enabled(self):
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.RUN_KEY) as k:
+                winreg.QueryValueEx(k, "K580 Control")
+                return True
+        except OSError:
+            return False
+
+    def set_autostart(self):
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+            if self.autostart.get():
+                pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                winreg.SetValueEx(k, "K580 Control", 0, winreg.REG_SZ,
+                                  f'"{pyw}" "{os.path.abspath(__file__)}"')
+            else:
+                try:
+                    winreg.DeleteValue(k, "K580 Control")
+                except OSError:
+                    pass
+
+    def check_updates(self):
+        import urllib.request
+        try:
+            with urllib.request.urlopen(UPDATE_URL, timeout=8) as r:
+                latest = json.load(r).get("tag_name", "").lstrip("v")
+        except Exception:
+            messagebox.showinfo("K580", "Couldn't reach GitHub, or no releases have been published yet.")
+            return
+
+        def ver(s):
+            return tuple(int(x) for x in s.split(".") if x.isdigit())
+        if latest and ver(latest) > ver(APP_VERSION):
+            if messagebox.askyesno("K580", f"Version {latest} is available (you have {APP_VERSION}).\n"
+                                           "Open the download page?"):
+                import webbrowser
+                webbrowser.open(RELEASES_PAGE)
+        else:
+            messagebox.showinfo("K580", f"You're up to date ({APP_VERSION}).")
+
+    def factory_reset(self):
+        """Rebooting through the ISP bootloader makes the firmware restore its factory settings."""
+        import k580_patch
+        import tempfile
+        if not self.kb:
+            messagebox.showwarning("K580", "This needs the cable (wireless switch off).")
+            return
+        if not messagebox.askyesno("K580", "Reset lighting, key assignments and macros to factory settings?\n"
+                                           "The keyboard restarts once. This can't be undone (save a backup\n"
+                                           "on the Backup page first if you might want your settings back)."):
+            return
+        tool = self.find_sinowisp()
+        if not tool:
+            return
+        self.config(cursor="watch")
+        self.update()
+        self.kb.close()
+        self.kb = None
+        try:
+            k580_patch.read_keyboard(tool, os.path.join(tempfile.gettempdir(), "k580-reset-read.hex"))
+        except RuntimeError as e:
+            messagebox.showerror("K580", str(e))
+        self.kb = self.wait_for_keyboard()
+        self.config(cursor="")
+        self.connect()
+        messagebox.showinfo("K580", "Done. The keyboard is back to factory settings.")
 
     # ---------------- backup
     def build_backup(self, nb):
