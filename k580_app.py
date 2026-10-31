@@ -724,9 +724,9 @@ class App(tk.Tk):
         messagebox.showinfo("K580", "Done. Installed now: " + self.fw_state.cget("text"))
 
     def snap_slider(self, parent, var, steps=4, length=260):
-        """A slider that moves freely and stays where you drop it, with 0-100% marks underneath.
+        """A slider that moves freely while dragged and eases onto the nearest 25% mark on release.
 
-        The keyboard itself only has 5 levels per setting, so the nearest one is sent.
+        The keyboard itself only has 5 levels per setting (0-4).
         """
         box = ttk.Frame(parent)
         sc = ttk.Scale(box, from_=0, to=steps, variable=var, length=length)
@@ -743,8 +743,20 @@ class App(tk.Tk):
             k580_theme.DRAGGING = True
 
         def release(_e):
+            # the keyboard only has 5 levels, so glide onto the nearest 25% mark, then apply
             k580_theme.DRAGGING = False
-            self.apply_lighting(keep_sliders=True)
+            start, target = var.get(), round(var.get())
+            frames = 8
+
+            def step(n=1):
+                t = n / frames
+                var.set(start + (target - start) * (1 - (1 - t) ** 3))   # ease-out
+                if n < frames:
+                    self.after(15, step, n + 1)
+                else:
+                    var.set(target)
+                    self.apply_lighting()
+            step()
 
         sc.bind("<ButtonPress-1>", press)
         sc.bind("<ButtonRelease-1>", release)
