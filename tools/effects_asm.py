@@ -17,6 +17,7 @@ Our two LCALLs replace the ones at 0x2013 and 0x23BB: for our effect ids they dr
 address (the inline case table) and run our code; for everything else they LJMP to 0x62A9 as before.
 """
 import math
+import sys
 
 BASE = 0xEC00
 OURS = (0x06, 0x10, 0x12)            # Rainbow wheel, Colorful waterfall, Rotating storm
@@ -33,6 +34,7 @@ SKIP = 0xFE                          # table value: don't touch this key
 # our variables live in XRAM 0x0EF0-0x0EF5, which the stock firmware never uses (0x0E8D-0x0E92, used
 # before, are scratch space of the firmware's own routines, which reset the colour phase now and then)
 PHASE, EFFECT, COL, ROW, TABLE = 0x0EF0, 0x0EF1, 0x0EF2, 0x0EF3, 0x0EF4   # TABLE: 2 bytes
+EVEN_AT = 0xEF00                     # flash: 128-byte hue remap (even_hues), after the G-flag code
 
 
 class Asm:
@@ -110,6 +112,20 @@ def tables():
     return wheel, fall, storm
 
 
+def even_hues(firmware):
+    """The firmware's 128-colour rainbow (0x3484) rushes through orange (yellow to red in a few steps)
+    and lingers elsewhere. Map 128 evenly spaced hues to the nearest of its entries instead."""
+    import colorsys
+    rgb = [firmware[0x3484 + i * 3:0x3487 + i * 3] for i in range(128)]
+    hue = [colorsys.rgb_to_hsv(*(c / 255 for c in x))[0] * 360 for x in rgb]
+    pos = [(hue[0] - h) % 360 for h in hue]               # degrees travelled from entry 0
+    out = bytearray()
+    for k in range(128):
+        want = k * 360 / 128
+        out.append(min(range(128), key=lambda i: min(abs(pos[i] - want), 360 - abs(pos[i] - want))))
+    return bytes(out)
+
+
 def build():
     a = Asm(BASE)
     wheel, fall, storm = tables()
@@ -178,6 +194,7 @@ def build():
     a.sjmp("store_rgb")
     a.label("lit")
     a.mov_dptr(PHASE); a.b(0xE0, 0x2F, 0x54, 0x7F)              # A = (phase + R7) & 127
+    a.mov_dptr(EVEN_AT); a.b(0x93)                               # A = even[A]: evenly spaced hues
     a.b(0x75, 0xF0, 0x03, 0xA4)                                  # A,B = A * 3
     a.b(0x24, 0x84, 0xF5, 0x82, 0xE5, 0xF0, 0x34, 0x34, 0xF5, 0x83)   # DPTR = 0x3484 + 3 * hue
     a.b(0xE4, 0x93, 0xFD)                                        # R5 = red
@@ -211,6 +228,8 @@ if __name__ == "__main__":
     print(f"{len(code)} bytes at 0x{BASE:04X}, ends 0x{BASE + len(code):04X}")
     print({k: hex(v) for k, v in labels.items() if not k[0] in "if" or k.endswith("sel")})
     print(code.hex())
+    if len(sys.argv) > 1:                       # path to a firmware image: print the hue remap too
+        print("even hues:", even_hues(open(sys.argv[1], "rb").read()).hex())
 
 
 def build_gflags(base=0xEEB0):
