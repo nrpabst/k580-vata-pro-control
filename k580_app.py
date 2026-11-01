@@ -551,7 +551,7 @@ class App(tk.Tk):
         self.fw_auto = ttk.Checkbutton(f, text="Use wired mode whenever the cable is plugged in",
                                        variable=self.auto_wired)
         self.fw_auto.grid(row=2, column=0, columnspan=2, sticky="w", pady=(12, 0))
-        ttk.Label(f, text="Takes effect when you install or reinstall.",
+        ttk.Label(f, text="You can't charge while using wireless. Applies when you install or reinstall.",
                   style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w", padx=(26, 0),
                                              pady=(2, 4))
         self.fw_install = ttk.Button(f, text="Install custom firmware",
