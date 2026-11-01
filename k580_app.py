@@ -676,6 +676,7 @@ class App(tk.Tk):
         except SystemExit:
             pass
         self.status.config(text="Keyboard not found. Plug in the dongle or cable, then Reconnect.")
+        self.battery.config(text="")
 
     def get_led(self):
         if self.kb:
@@ -1463,8 +1464,11 @@ class App(tk.Tk):
             self.connect()
         elif self.wl:
             try:
-                self.wl.query(0x07)
+                data, _ = self.wl.query(0x07)
+                alive = data[:1] == bytes([1])          # the dongle answers even when the keyboard is off
             except Exception:
+                alive = False
+            if not alive:
                 self.connect()
         else:
             self.connect()                          # nothing connected yet: keep looking
