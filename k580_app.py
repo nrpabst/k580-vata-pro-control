@@ -1387,7 +1387,7 @@ class App(tk.Tk):
         self.battery.config(text=text)
 
     # side-light modes (lighting byte 0x12), from the firmware's side-light routine at 0x43AA
-    SIDE_MODES = {"Off": 0, "Mode 1": 1, "Rainbow cycle": 2, "White": 3, "Red": 4, "Yellow": 5, "Orange": 6,
+    SIDE_MODES = {"Off": 0, "RGB": 1, "Rainbow cycle": 2, "White": 3, "Red": 4, "Yellow": 5, "Orange": 6,
                   "Green": 7, "Cyan": 8, "Blue": 9, "Magenta": 10, "Colour breathing": 11}
     SIDE_MODE, SIDE_BRIGHT, SIDE_SPEED = 0x12, 0x14, 0x15
 
