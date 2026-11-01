@@ -243,6 +243,12 @@ class KeyboardView(tk.Canvas):
         self.redraw()
         self.on_click(None)
 
+    def centers(self):
+        """{matrix index: (x, y)} of each key's centre, scaled to 0..1."""
+        boxes = {i: self.coords(r) for i, r in self.rects.items()}
+        w, h = int(self.cget("width")), int(self.cget("height"))
+        return {i: ((b[0] + b[2]) / 2 / w, (b[1] + b[3]) / 2 / h) for i, b in boxes.items()}
+
     def set_fills(self, fills):
         self.fills = dict(fills)
         self.redraw()
@@ -407,6 +413,7 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.after(200, self.poll_tray)
         self.after(1000, self.poll_lighting)
+        self.after(500, self.animate_preview)
         if "--tray" in sys.argv:
             self.withdraw()
 
@@ -498,8 +505,9 @@ class App(tk.Tk):
 
     # ---------------- lighting
     def build_lighting(self, nb):
-        f = ttk.Frame(nb, padding=12)
-        nb.add(f, text="Lighting")
+        f, self.lkb, self.preview_note = self.keyboard_page(
+            nb, "Lighting", self.preview_clicked, "Preview of the current effect (an approximation).")
+        self.lkb_centers = self.lkb.centers()
         f.columnconfigure(0, minsize=120)
         f.columnconfigure(1, weight=1)
         names = [k580.EFFECTS[h] for h in k580.SLOT_HW] + ["OFF"]
@@ -507,32 +515,63 @@ class App(tk.Tk):
         self.bright = tk.DoubleVar()
         self.speed = tk.DoubleVar()
         self.color = tk.StringVar()
-        ttk.Label(f, text="Effect").grid(row=0, column=0, sticky="w", pady=8)
+        ttk.Label(f, text="Effect").grid(row=2, column=0, sticky="w", pady=8)
         ec = ttk.Combobox(f, textvariable=self.effect, values=names, state="readonly", width=24)
-        ec.grid(row=0, column=1, sticky="w")
+        ec.grid(row=2, column=1, sticky="w")
         ec.bind("<<ComboboxSelected>>", lambda e: self.apply_lighting(new_effect=True))
-        ttk.Label(f, text="Brightness").grid(row=1, column=0, sticky="w", pady=8)
-        self.snap_slider(f, self.bright, self.brightness_levels).grid(row=1, column=1, sticky="w", pady=6)
-        ttk.Label(f, text="Speed").grid(row=2, column=0, sticky="w", pady=8)
+        ttk.Label(f, text="Brightness").grid(row=3, column=0, sticky="w", pady=8)
+        self.snap_slider(f, self.bright, self.brightness_levels).grid(row=3, column=1, sticky="w", pady=6)
+        ttk.Label(f, text="Speed").grid(row=4, column=0, sticky="w", pady=8)
         self.speed_slider = self.snap_slider(f, self.speed)
-        self.speed_slider.grid(row=2, column=1, sticky="w", pady=6)
-        ttk.Label(f, text="Color").grid(row=3, column=0, sticky="w", pady=8)
+        self.speed_slider.grid(row=4, column=1, sticky="w", pady=6)
+        ttk.Label(f, text="Color").grid(row=5, column=0, sticky="w", pady=8)
         self.color_box = self.color_swatches(f)
-        self.color_box.grid(row=3, column=1, sticky="w")
+        self.color_box.grid(row=5, column=1, sticky="w")
         self.effect_note = ttk.Label(f, text="Changes apply instantly.", style="Muted.TLabel")
-        self.effect_note.grid(row=4, column=0, columnspan=2, sticky="w", pady=12)
+        self.effect_note.grid(row=6, column=0, columnspan=2, sticky="w", pady=12)
 
-        ttk.Separator(f).grid(row=5, column=0, columnspan=2, sticky="ew", pady=12)
+        ttk.Separator(f).grid(row=7, column=0, columnspan=2, sticky="ew", pady=12)
         self.media_on = tk.BooleanVar(value=True)
         self.media_toggle = ttk.Checkbutton(f, text="Keep media-key lights on", variable=self.media_on,
                                             command=self.set_media_leds)
-        self.media_toggle.grid(row=6, column=0, columnspan=2, sticky="w")
+        self.media_toggle.grid(row=8, column=0, columnspan=2, sticky="w")
         self.wheel_on = tk.BooleanVar(value=False)
         self.wheel_toggle = ttk.Checkbutton(f, text="Keep volume/brightness key light on",
                                             variable=self.wheel_on, command=self.set_wheel_led)
-        self.wheel_toggle.grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.wheel_toggle.grid(row=9, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.media_note = ttk.Label(f, text="", style="Muted.TLabel")
-        self.media_note.grid(row=8, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.media_note.grid(row=10, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+    def preview_clicked(self, idx):
+        """The Lighting keyboard is only a preview: don't keep keys selected."""
+        self.lkb.selected.clear()
+        self.lkb.redraw()
+
+    def animate_preview(self):
+        """Redraw the Lighting page's keyboard ~20 times a second while it's showing."""
+        import k580_preview
+        self.after(50, self.animate_preview)
+        if self.state() != "normal" or self.nb.tab(self.nb.select(), "text") != "Lighting":
+            return
+        name = self.effect.get()
+        hw = next((h for h, n in k580.EFFECTS.items() if n == name), 0)
+        color = k580.COLORS.index(self.color.get()) if self.color.get() in k580.COLORS else 7
+        speed = self.speed.get() / 4
+        level = self.bright.get() / max(1, self.brightness_levels())
+        fills = k580_preview.frame(hw, time.time(), self.lkb_centers, color, speed,
+                                   getattr(self, "key_colors", None))
+        bg = (0x1d, 0x20, 0x2a)                      # k580_theme.FIELD: unlit keys keep their colour
+        out = {}
+        for i, c in fills.items():
+            c = [v * level for v in c]
+            out[i] = tuple(int(max(b, v)) for b, v in zip(bg, c))
+        # media keys and the volume/brightness key have their own white LEDs
+        for i in (88, 113, 125):
+            if self.media_on.get():
+                out[i] = (220, 220, 220)
+        if self.wheel_on.get():
+            out[77] = (220, 220, 220)
+        self.lkb.set_fills(out)
 
     # ---------------- firmware page
     FIRMWARE_NOTE = (
@@ -1047,6 +1086,9 @@ class App(tk.Tk):
             note += " Self-define uses the colors from the Key colors page."
         elif hw == 1:
             note += " Fixed on doesn't move, so it has no speed."
+        import k580_preview
+        if hw in k580_preview.REACTIVE:
+            note += f" {name}: {k580_preview.REACTIVE[hw]} (not shown in the preview)."
         self.effect_note.config(text=note)
 
     def apply_lighting(self, new_effect=False, keep_sliders=False):
