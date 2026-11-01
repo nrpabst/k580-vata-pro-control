@@ -757,16 +757,40 @@ class App(tk.Tk):
         self.effect_note.grid(row=6, column=0, columnspan=2, sticky="w", pady=12)
 
         ttk.Separator(f).grid(row=7, column=0, columnspan=2, sticky="ew", pady=12)
+        # bottom: key lights (left) and side lights (right), side by side
+        bottom = ttk.Frame(f)
+        bottom.grid(row=8, column=0, columnspan=2, sticky="ew")
+        bottom.columnconfigure(0, weight=1)
+        kl = ttk.Frame(bottom)
+        kl.grid(row=0, column=0, sticky="nw")
+        ttk.Label(kl, text="Key lights", font=k580_theme.FONT_BOLD).pack(anchor="w", pady=(0, 6))
         self.media_on = tk.BooleanVar(value=True)
-        self.media_toggle = ttk.Checkbutton(f, text="Keep media-key lights on", variable=self.media_on,
+        self.media_toggle = ttk.Checkbutton(kl, text="Keep media-key lights on", variable=self.media_on,
                                             command=self.set_media_leds)
-        self.media_toggle.grid(row=8, column=0, columnspan=2, sticky="w")
+        self.media_toggle.pack(anchor="w")
         self.wheel_on = tk.BooleanVar(value=False)
-        self.wheel_toggle = ttk.Checkbutton(f, text="Keep volume/brightness key light on",
+        self.wheel_toggle = ttk.Checkbutton(kl, text="Keep volume/brightness key on",
                                             variable=self.wheel_on, command=self.set_wheel_led)
-        self.wheel_toggle.grid(row=9, column=0, columnspan=2, sticky="w", pady=(8, 0))
-        self.media_note = ttk.Label(f, text="", style="Muted.TLabel")
-        self.media_note.grid(row=10, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.wheel_toggle.pack(anchor="w", pady=(8, 0))
+        self.media_note = ttk.Label(kl, text="", style="Muted.TLabel", wraplength=280, justify="left")
+        self.media_note.pack(anchor="w", pady=(6, 0))
+
+        # side lights (the strips on either side of the keyboard): lighting bytes 0x12-0x15
+        sf = ttk.Frame(bottom)
+        sf.grid(row=0, column=1, sticky="ne", padx=(16, 0))
+        ttk.Label(sf, text="Side lights", font=k580_theme.FONT_BOLD).pack(anchor="w", pady=(0, 6))
+        self.side_mode = tk.StringVar()
+        self.side_bright = tk.DoubleVar()
+        self.side_speed = tk.DoubleVar()
+        sm = ttk.Combobox(sf, textvariable=self.side_mode, values=list(self.SIDE_MODES), state="readonly",
+                          width=22)
+        sm.pack(anchor="w")
+        sm.bind("<<ComboboxSelected>>", lambda e: self.apply_side())
+        for text, var in (("Brightness", self.side_bright), ("Speed", self.side_speed)):
+            row = ttk.Frame(sf)
+            row.pack(anchor="w", pady=(6, 0))
+            ttk.Label(row, text=text, width=9).pack(side="left")
+            self.snap_slider(row, var, length=170, on_done=self.apply_side).pack(side="left")
 
     def preview_clicked(self, idx):
         """Self-define: clicking keys selects them for painting. Otherwise the keyboard is only a
@@ -1232,7 +1256,7 @@ class App(tk.Tk):
         self.sync_picker()
         self.save_palette()
 
-    def snap_slider(self, parent, var, levels=lambda: 4, length=260):
+    def snap_slider(self, parent, var, levels=lambda: 4, length=260, on_done=None):
         """A slider that moves freely while dragged and eases onto the nearest level on release.
 
         `var` holds the keyboard's own level, 0..levels(): 0-4 on stock firmware, brightness 0-20
@@ -1324,7 +1348,7 @@ class App(tk.Tk):
             # the keyboard has fixed levels, so glide onto the nearest one, then apply
             def done():
                 self.slider_busy = False
-                self.apply_lighting()
+                (on_done or self.apply_lighting)()
             glide(round(var.get()), done)
 
         c.enabled = True                            # False greys it out for effects that ignore it
@@ -1362,8 +1386,30 @@ class App(tk.Tk):
             text = f"Battery {pct}%" if pct <= 100 else "Battery: checking..."
         self.battery.config(text=text)
 
+    # side-light modes (lighting byte 0x12), from the firmware's side-light routine at 0x43AA
+    SIDE_MODES = {"Off": 0, "Mode 1": 1, "Rainbow cycle": 2, "White": 3, "Red": 4, "Yellow": 5, "Orange": 6,
+                  "Green": 7, "Cyan": 8, "Blue": 9, "Magenta": 10, "Colour breathing": 11}
+    SIDE_MODE, SIDE_BRIGHT, SIDE_SPEED = 0x12, 0x14, 0x15
+
+    def show_side(self):
+        names = {v: k for k, v in self.SIDE_MODES.items()}
+        self.side_mode.set(names.get(self.led[self.SIDE_MODE], f"Mode {self.led[self.SIDE_MODE]}"))
+        self.side_bright.set(min(self.led[self.SIDE_BRIGHT], 4))
+        self.side_speed.set(min(self.led[self.SIDE_SPEED], 4))
+
+    def apply_side(self):
+        if not (self.kb or self.wl) or self.side_mode.get() not in self.SIDE_MODES:
+            return
+        led = bytearray(self.led if self.led else self.get_led())
+        led[self.SIDE_MODE] = self.SIDE_MODES[self.side_mode.get()]
+        led[self.SIDE_BRIGHT] = int(round(self.side_bright.get()))
+        led[self.SIDE_SPEED] = int(round(self.side_speed.get()))
+        self.set_led(led)
+        self.led = led
+
     def show_lighting(self):
         self.show_battery(self.led)
+        self.show_side()
         self.after_idle(self.sync_picker)
         hw = self.led[10]
         self.effect.set(k580.EFFECTS.get(hw, "OFF"))
