@@ -885,6 +885,8 @@ class App(tk.Tk):
             latest = all(flash(a, len(c)) == c for a, c in k580_patch.LATEST_SITES)
             addr, code = k580_patch.AUTO_WIRED_SITE
             self._auto_installed = flash(addr, len(code)) == code
+            # the extra effects: any custom build that has the effect-switch hook (older or latest)
+            self._has_effects = flash(0x2013, 3) == bytes.fromhex(k580_patch.EFFECTS_PATCH[0][2])
             return "switch" if latest else "switch-nofn"
         if site == b"\x20\x6e":
             return "toggle"
@@ -904,7 +906,8 @@ class App(tk.Tk):
             v = self.marker_variant() or "unknown"
         if v == "switch" and self.kb:
             self.ensure_fn_toggles()
-        self.effect_combo.config(values=k580.effect_names(v == "switch"))
+        has_effects = getattr(self, "_has_effects", False) if self.kb else v == "switch"
+        self.effect_combo.config(values=k580.effect_names(has_effects))
         led = self.led or self.get_led()
         auto = self.kb and getattr(self, "_auto_installed", False)
         self.fw_state.config(text={"switch": "Custom firmware" + (" (Auto Wired Mode)"
