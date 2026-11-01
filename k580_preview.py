@@ -60,7 +60,7 @@ def frame(hw, t, centers, color, speed, custom=None):
             c = base or hue(x)
         elif hw == 2:                                         # Respire: slow breathing
             cycle = t * (0.12 + 0.12 * speed)
-            c = scale(base or hue(math.floor(cycle) / 7), 0.5 - 0.5 * math.cos(2 * math.pi * cycle))
+            c = scale(base or hue(x), 0.5 - 0.5 * math.cos(2 * math.pi * cycle))   # multi: rainbow across
         elif hw == 3:                                         # Rainbow: whole board, slowly
             c = hue(t * (0.03 + 0.06 * speed))
         elif hw in (4, 7, 9, 12):                             # key-press effects
