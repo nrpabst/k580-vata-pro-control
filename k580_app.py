@@ -1305,8 +1305,8 @@ class App(tk.Tk):
         self._poll_n = getattr(self, "_poll_n", 0) + 1
         if self._poll_n % 3 == 0 and self.state() == "normal":
             self.watch_connection()
-        if self._poll_n % 30 == 0 and self.state() == "normal" and (self.kb or self.wl):
-            try:                                # battery, every 30 s on any page
+        if self._poll_n % 10 == 0 and self.state() == "normal" and (self.kb or self.wl):
+            try:                                # battery, every 10 s on any page
                 self.show_battery(self.get_led())
             except Exception:
                 pass
