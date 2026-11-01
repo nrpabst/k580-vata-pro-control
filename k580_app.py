@@ -548,13 +548,12 @@ class App(tk.Tk):
         self.fw_state = ttk.Label(f, text="(connect the cable to check)")
         self.fw_state.grid(row=1, column=1, sticky="w", pady=(14, 8))
         self.auto_wired = tk.BooleanVar(value=False)
-        self.fw_auto = ttk.Checkbutton(f, text="Switch to the cable automatically when it's plugged in",
+        self.fw_auto = ttk.Checkbutton(f, text="Use wired mode whenever the cable is plugged in",
                                        variable=self.auto_wired)
-        self.fw_auto.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
-        ttk.Label(f, text="Off: plugging in only charges, and the keyboard stays on 2.4G or Bluetooth\n"
-                          "(like stock). On: plugging in uses the cable, whatever the switch says.\n"
-                          "Pick this before installing. To change it later, tick or untick it and Reinstall.",
-                  style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 4))
+        self.fw_auto.grid(row=2, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        ttk.Label(f, text="Takes effect when you install or reinstall.",
+                  style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w", padx=(26, 0),
+                                             pady=(2, 4))
         self.fw_install = ttk.Button(f, text="Install custom firmware",
                                      command=lambda: self.install_firmware(removing=False),
                                      style="Accent.TButton")
@@ -614,7 +613,7 @@ class App(tk.Tk):
             self.ensure_fn_toggles()
         led = self.led or self.get_led()
         auto = self.kb and getattr(self, "_auto_installed", False)
-        self.fw_state.config(text={"switch": "Custom firmware" + (" (switches to the cable when plugged in)"
+        self.fw_state.config(text={"switch": "Custom firmware" + (" (wired mode when plugged in)"
                                                                   if auto else ""),
                                    "switch-fine": "Custom (test version with 20 brightness steps)",
                                    "switch-nofn": "Custom (older version)",
@@ -760,7 +759,7 @@ class App(tk.Tk):
                          "This reads your keyboard's firmware, checks it's the exact version the patch is for,\n"
                          "saves an untouched copy for undo, and installs the patched version")
                 + " (about a minute).\n\nKeep the cable plugged in until it says Done. Continue?"
-                + ("" if removing else "\n\nSwitch to the cable when plugged in: "
+                + ("" if removing else "\n\nWired mode whenever the cable is plugged in: "
                    + ("on" if self.auto_wired.get() else "off"))):
             return
         self.config(cursor="watch")
