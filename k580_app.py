@@ -19,6 +19,7 @@ import tkinter.font as tkfont
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import k580  # noqa: E402
 import k580_theme  # noqa: E402
+import k580_resize  # noqa: E402
 import k580_tray  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -609,6 +610,7 @@ class App(tk.Tk):
             except tk.TclError:
                 pass
         self.after(300, self.fit_window)             # once the window is on screen and measurable
+        k580_resize.install(self)                    # resizing repaints only what changed
         self.iconbitmap(default=k580_tray.icon_path())
         self.tray = k580_tray.Tray()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -1609,8 +1611,10 @@ class App(tk.Tk):
         self.pages.append((outer, canvas, inner))
 
         def fit(_e=None):
-            canvas.configure(scrollregion=(0, 0, inner.winfo_reqwidth(), inner.winfo_reqheight()))
-            canvas.itemconfigure(win, width=max(canvas.winfo_width(), inner.winfo_reqwidth()))
+            # the content keeps its own width: re-laying it out on every step of a resize drag is slow
+            size = (inner.winfo_reqwidth(), inner.winfo_reqheight())
+            if canvas.cget("scrollregion") != "0 0 %d %d" % size:
+                canvas.configure(scrollregion=(0, 0) + size)
             if inner.winfo_reqheight() > canvas.winfo_height():   # scrollbar only when needed
                 if not bar.winfo_ismapped():
                     bar.pack(side="right", fill="y")
