@@ -613,7 +613,7 @@ class App(tk.Tk):
             self.wl = k580_wireless.Dongle()
             data, _ = self.wl.query(0x07)
             if data[:1] == b"\x01":
-                self.status.config(text="Connected by 2.4G dongle  ✓  (lighting only; use the cable for keys/macros)")
+                self.status.config(text="Connected by 2.4G dongle  ✓  (lighting only)")
                 self.load_lighting()
                 return
             self.wl.close()
