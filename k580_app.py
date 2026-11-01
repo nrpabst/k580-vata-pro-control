@@ -258,6 +258,33 @@ def text_to_events(text, delay=15):
     return out
 
 
+def parse_g_slot(slot):
+    """A G-key recording (made on the keyboard): [len][0x11][0][0] then 4-byte events
+    [delay low][HID usage][delay high bits][extra]. Each key appears once going down and once going
+    up, so events toggle. Returns the keys pressed in order, with held modifiers folded in
+    (e.g. ["Enter", "RShift+1", "Enter"]), or None if the slot is empty."""
+    if not slot or slot[1] != 0x11 or slot[0] < 6:
+        return None
+    names = {v: k for k, v in HID.items()}
+    names.update({0xE0 + i: m for i, m in enumerate(("LCtrl", "LShift", "LAlt", "LWin",
+                                                     "RCtrl", "RShift", "RAlt", "RWin"))})
+    down, held, out = set(), [], []
+    end = min(len(slot), slot[0] + 2)
+    for i in range(4, end - 3, 4):
+        code = slot[i + 1]
+        name = names.get(code, f"0x{code:02X}")
+        pressed = code not in down
+        down ^= {code}
+        if 0xE0 <= code <= 0xE7:
+            if pressed:
+                held.append(name)
+            elif name in held:
+                held.remove(name)
+        elif pressed:
+            out.append("+".join(held + [name]))
+    return out
+
+
 def parse_macros(buf):
     """Read the app-macro table back into [(name, body_bytes)]."""
     first = int.from_bytes(buf[0:2], "little")
@@ -1677,11 +1704,34 @@ class App(tk.Tk):
         ttk.Label(f, text="Keys with a macro are outlined in the accent colour. G1-G5 recordings aren't touched.",
                   style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w")
 
+        # G1-G5: macros recorded on the keyboard itself (Fn + G-key), read-only here
+        gk = ttk.Frame(f)
+        gk.grid(row=4, column=0, columnspan=2, sticky="w", pady=(14, 0))
+        ttk.Label(gk, text="G-key recordings", font=k580_theme.FONT_BOLD).grid(row=0, column=0, columnspan=2,
+                                                                               sticky="w")
+        self.g_labels = []
+        for n in range(5):
+            row = ttk.Frame(gk)
+            row.grid(row=n + 1, column=0, columnspan=2, sticky="w", pady=1)
+            ttk.Label(row, text=f"G{n + 1}", width=4).pack(side="left")
+            lab = ttk.Label(row, text="-", style="Muted.TLabel")
+            lab.pack(side="left")
+            self.g_labels.append(lab)
+        ttk.Label(gk, text="Recorded on the keyboard itself. See the keyboard's manual for how to record them.",
+                  style="Muted.TLabel").grid(row=6, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
     def load_macros(self):
         if not self.kb:
             return
-        area = self.kb.read(0x80 | k580.OP_MACRO, 1024)
-        self.macros = [(n, [b[i:i + 4] for i in range(0, len(b), 4)]) for n, b in parse_macros(area)]
+        area = self.kb.read(0x80 | k580.OP_MACRO, 1024 + 5 * 0x80)     # app macros, then G1-G5 slots
+        self.macros = [(n, [b[i:i + 4] for i in range(0, len(b), 4)]) for n, b in parse_macros(area[:1024])]
+        for n, lab in enumerate(self.g_labels):
+            keys = parse_g_slot(area[1024 + n * 0x80:1024 + (n + 1) * 0x80])
+            if keys is None:
+                lab.config(text="(empty)")
+            else:
+                text = "  ".join(keys) or "(no keys)"
+                lab.config(text=text if len(text) <= 70 else text[:67] + "…")
         self.mlist.delete(0, "end")
         for i, (n, ev) in enumerate(self.macros):
             self.mlist.insert("end", f"{i + 1}. {n}  ({len(ev)} steps)")
