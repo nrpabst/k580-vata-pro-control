@@ -63,18 +63,16 @@ PATCH = [
 EFFECTS_CODE = bytes.fromhex(
     "b40602800db410028008b4120280030262a91581158130010dc201d202c24ac22de4900ef0f0900dafe09037410223a7"
     "b40602800db410028008b4120280030262a915811581900ef1f0900932e0fea3e0ffc3900399e09f900398e09e500122"
-    "12ec660225dd900ef0e02402f0900ef1e0b4060590ed06800bb4100590ed84800390ee02aa83ab82900ef4eaf0a3ebf0"
+    "12ec660225dd900ef0e02402f0900ef1e0b4060590ed3a800bb4100590ed3a800390edb8aa83ab82900ef4eaf0a3ebf0"
     "e4900ef2f0e4900ef3f0900ef2e075f006a4ff900ef3e02fff900ef4e0faa3e02ff582ea3400f583e493ffb4fe0302ec"
-    "edb4ff06e4fdfefc8008900ef0e02f12ef00900192edf0900000eef0ec129749900ef2e0ff900ef3e0fd127295900ef3"
-    "e004f0b4060a900ef2e004f0b415042202ec9a02ec958f89837c7670ff8a837c756e928b847b746d958d847b72fe978f"
-    "857a70fe9b9286796d64a096887769fea59b8a7564feada38f705c52b6af9b645049c0c0c0404040c9d0e41bfefed2dc"
-    "f0fefefedae4f50a1b25e0e9f7fefe20e4edf9fe121be8f0fafefe17fff2fb040d15fff4fb040bfefff5fc030a11fff6"
-    "fcfe09fe00f0e0d0c0b0fff0e0d0c0b000f0e0d0c0b000f0e0d0c0fe00f0e0d0c0fe00f0e0d0c0b000f0e0d0c0fe00f0"
-    "e0d0c0fe00f0e0d0c0b000f0e0d0c0b000f0e0d0c0b000f0e0d0fefe00f0e0fefefe00f0e0d0c0b000f0e0fefeb000f0"
-    "e0fec0b000f0e0fefeb0fff0e0d0c0b0fff0e0d0c0fefff0e0d0c0b0fff0e0fec0fe26190f090607ff0d02faf7f81000"
-    "f4ece9ea06f5e7dedafefce9dacfcafef5dfcdc0bbbeefd7c1b1abfeebd1b6a09afeebcfad8e8891efd4ad767483f8e1"
-    "cb4b617803f4f62dfefe11080efefefe201a2036516b2f2b31fefe6f3e3b40fe5f754c4a4ffefe7cff5a5e677586ff69"
-    "6c7480feff777a828d9aff8689fe99fe"
+    "fdb4ff06e4fdfefc8018900ef1e0b41009900ef3e075f0f0a4ff900ef0e02f12ef00900192edf0900000eef0ec129749"
+    "900ef2e0ff900ef3e0fd127295900ef3e004f0b4060a900ef2e004f0b415042202ec9a02ec959003b1e0b40c1a9001d3"
+    "e0900192f09001d4e0900000f09001d5e0900db5f0d2400246f08f89837c7670ff8a837c756e928b847b746d958d847b"
+    "72fe978f857a70fe9b9286796d64a096887769fea59b8a7564feada38f705c52b6af9b645049c0c0c0404040c9d0e41b"
+    "fefed2dcf0fefefedae4f50a1b25e0e9f7fefe20e4edf9fe121be8f0fafefe17fff2fb040d15fff4fb040bfefff5fc03"
+    "0a11fff6fcfe09fe26190f090607ff0d02faf7f81000f4ece9ea06f5e7dedafefce9dacfcafef5dfcdc0bbbeefd7c1b1"
+    "abfeebd1b6a09afeebcfad8e8891efd4ad767483f8e1cb4b617803f4f62dfefe11080efefefe201a2036516b2f2b31fe"
+    "fe6f3e3b40fe5f754c4a4ffefe7cff5a5e677586ff696c7480feff777a828d9aff8689fe99fe"
 )
 HUE_CODE = bytes.fromhex(
     "75f006a4fbf4fae5f0b400087dffebfe7c008032b40108eafd7eff7c008027b402087d007effebfc801cb403087d00ea"
@@ -90,6 +88,7 @@ EFFECTS_PATCH = [
     (0x6F32, "10", "fe"),                              #                  stop skipping 0x10
     (0x6F3D, "11", "12"),                              #                  last effect 0x11 -> 0x12
     (0xEC00, "00" * len(EFFECTS_CODE), EFFECTS_CODE.hex()),
+    (0x43E7, "0246f0", "02ed16"),                      # side lights: modes above 11 -> side_match (Match = 12)
     (0xEF00, "00" * len(HUE_CODE), HUE_CODE.hex()),     # smooth rainbow colours (build_hue)
 ]
 # Record key fix: pressing record and then record again without choosing a G key marked the G key

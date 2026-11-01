@@ -1448,9 +1448,10 @@ class App(tk.Tk):
             text = f"Battery {pct}%" if pct <= 100 else "Battery: checking..."
         self.battery.config(text=text)
 
-    # side-light modes (lighting byte 0x12), from the firmware's side-light routine at 0x43AA
-    SIDE_MODES = {"Off": 0, "RGB": 1, "Rainbow cycle": 2, "White": 3, "Red": 4, "Yellow": 5, "Orange": 6,
-                  "Green": 7, "Cyan": 8, "Blue": 9, "Magenta": 10, "Colour breathing": 11}
+    # side-light modes (lighting byte 0x12), from the firmware's side-light routine at 0x43AA;
+    # Match (12) is added by the custom firmware: the side lights take the Caps Lock key's colour
+    SIDE_MODES = {"Off": 0, "Match": 12, "RGB": 1, "Rainbow cycle": 2, "White": 3, "Red": 4, "Yellow": 5,
+                  "Orange": 6, "Green": 7, "Cyan": 8, "Blue": 9, "Magenta": 10, "Colour breathing": 11}
     SIDE_MODE, SIDE_BRIGHT, SIDE_SPEED = 0x12, 0x14, 0x15
 
     def show_side(self):

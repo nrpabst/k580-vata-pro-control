@@ -35,6 +35,8 @@ SKIP = 0xFE                          # table value: don't touch this key
 # our variables live in XRAM 0x0EF0-0x0EF5, which the stock firmware never uses (0x0E8D-0x0E92, used
 # before, are scratch space of the firmware's own routines, which reset the colour phase now and then)
 PHASE, EFFECT, COL, ROW, TABLE = 0x0EF0, 0x0EF1, 0x0EF2, 0x0EF3, 0x0EF4   # TABLE: 2 bytes
+SIDE_MATCH = 12                      # side-light mode (lighting byte 0x12): copy a key's colour
+MATCH_KEY = 0x01CA + 0 * 18 + 3 * 3  # key colour buffer (0x1CA + col * 18 + row * 3): Caps Lock
 HUE_AT = 0xEF00                      # flash: build_hue (the rainbow colour routine), after the G-flag code
 
 
@@ -99,7 +101,7 @@ class Asm:
 def tables():
     """Base rainbow position (0-253; 254/255 mark skipped/dark keys) for every key, per effect:
     index col * 6 + row."""
-    wheel, fall, storm = bytearray(), bytearray(), bytearray()
+    wheel, storm = bytearray(), bytearray()
     for c in range(COLS):
         for r in range(ROWS):
             dx, dy = c - 10, (r - 2.5) * 1.6
@@ -109,10 +111,8 @@ def tables():
             special = SKIP if idx in SKIP_KEYS else OFF if idx in DARK_KEYS else None
             hue = lambda v: min(int(v) & 0xFF, 0xFD)
             wheel.append(special or hue(ang * 256))
-            fall.append(special or hue(-r * 16))           # colours move down the rows, neighbours
-                                                           # 1/16 of the rainbow apart
             storm.append(special or hue(ang * 256 + rad * 14))
-    return wheel, fall, storm
+    return wheel, storm
 
 
 GAMMA, GREEN = 2.2, 0.55               # LED colour correction for build_hue (see there)
@@ -159,7 +159,7 @@ def build_hue(base=HUE_AT):
 
 def build():
     a = Asm(BASE)
-    wheel, fall, storm = tables()
+    wheel, storm = tables()
     a.label("init_sel")
     for i, eid in enumerate(OURS):
         a.cjne_a(eid, f"i{i}")
@@ -202,7 +202,7 @@ def build():
     a.mov_dptr("t_wheel"); a.sjmp("store_t")
     a.label("s1")
     a.cjne_a(0x10, "s2")
-    a.mov_dptr("t_fall"); a.sjmp("store_t")
+    a.mov_dptr("t_wheel"); a.sjmp("store_t")            # waterfall: wheel table for skip/dark keys
     a.label("s2")
     a.mov_dptr("t_storm")
     a.label("store_t")                                  # XRAM 0xE8F:0xE90 = table address
@@ -224,6 +224,9 @@ def build():
     a.b(0xE4, 0xFD, 0xFE, 0xFC)                                  # dark key: R5 = R6 = R4 = 0
     a.sjmp("store_rgb")
     a.label("lit")
+    a.mov_dptr(EFFECT); a.b(0xE0); a.cjne_a(0x10, "not_fall")
+    a.mov_dptr(ROW); a.b(0xE0, 0x75, 0xF0, 0xF0, 0xA4, 0xFF)    # waterfall: R7 = -16 * row (rows
+    a.label("not_fall")                                          # 1/16 of the rainbow apart, flowing down)
     a.mov_dptr(PHASE); a.b(0xE0, 0x2F)                          # A = phase + R7 (wraps at 256)
     a.lcall(HUE_AT)                                              # R5, R6, R4 = red, green, blue
     a.label("store_rgb")
@@ -242,8 +245,20 @@ def build():
     a.label("row_back"); a.ljmp("row_loop")
     a.label("col_back"); a.ljmp("col_loop")
 
+    # Side lights, mode 12 "Match": the firmware's side-light routine (0x43AA) sends modes above 11
+    # to its exit at 0x46F0; we take that jump (0x43E7). For mode 12 we load the side-light colour
+    # (XRAM 0x192 / 0x0000 / 0x0DB5) from the Caps Lock key's current colour in the key colour
+    # buffer and set bit 0x40, so the routine's own code at 0x46F0 paints all 8 side-light spots.
+    a.label("side_match")
+    a.mov_dptr(0x03B1); a.b(0xE0); a.cjne_a(SIDE_MATCH, "side_out")
+    for src, dst in ((0, 0x0192), (1, 0x0000), (2, 0x0DB5)):
+        a.mov_dptr(MATCH_KEY + src); a.b(0xE0)
+        a.mov_dptr(dst); a.b(0xF0)
+    a.b(0xD2, 0x40)                                              # SETB 0x40: paint the side lights
+    a.label("side_out")
+    a.ljmp(0x46F0)
+
     a.label("t_wheel"); a.b(*wheel)
-    a.label("t_fall"); a.b(*fall)
     a.label("t_storm"); a.b(*storm)
     code = a.link()
     return code, a.labels
