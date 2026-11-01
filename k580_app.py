@@ -464,6 +464,7 @@ class App(tk.Tk):
                 os.makedirs(os.path.dirname(first), exist_ok=True)
                 with open(first, "w") as fh:
                     json.dump(k580.backup(self.kb), fh, indent=1)
+            self.kb.fix_rgb_table()             # single-colour effects go black if this table is broken
             self.load_lighting()
             self.load_colors()
             self.load_macros()

@@ -189,6 +189,26 @@ class K580:
     def get_rgb_table(self):
         return self.read(0x80 | OP_RGB_TABLE, SIZES[OP_RGB_TABLE])
 
+    def fix_rgb_table(self):
+        """Effects take their single colours from the RGB table (flash 0xA800, 7 colours x 22 effects).
+        Entering the ISP bootloader (firmware install) can leave a copy of the lighting block there
+        instead, which turns single-colour effects black. Writes the default table back if so.
+        Returns True if it had to."""
+        table = self.get_rgb_table()
+        entries = [table[i * 21:i * 21 + 21] for i in range(RGB_TABLE_EFFECTS)]
+        if table[0x7E:0x80] != bytes([0x5A, 0xA5]) and all(any(e) for e in entries[1:]):
+            return False
+        data = bytearray(SIZES[OP_RGB_TABLE])
+        for i in range(RGB_TABLE_EFFECTS + 2):
+            data[i * 21:i * 21 + 21] = DEFAULT_PALETTE
+        data[0x1FA:0x1FC] = bytes([0x5A, 0xA5])
+        self.write(OP_RGB_TABLE, bytes(data))
+        return True
+
+
+# red, green, blue, yellow, magenta, cyan, white: the colour indexes 0-6 of the lighting block
+DEFAULT_PALETTE = bytes.fromhex("ff0000 00ff00 0000ff ffff00 ff00ff 00ffff ffffff".replace(" ", ""))
+RGB_TABLE_EFFECTS = 22             # hw effect ids 0-21
 
 # Writes with these opcodes are refused: 0x88 reads back the MCU's flash, so 0x08 and the
 # unnamed 0x0B/0x0E may write to it.
@@ -349,6 +369,7 @@ def restore(kb, data):
         time.sleep(0.1)
     kb.write(OP_MACRO, bytes.fromhex(data["macros"]))
     time.sleep(0.1)
+    kb.fix_rgb_table()
 
 
 def main(argv):
