@@ -16,6 +16,8 @@ REACTIVE = {4: "colours run left and right along the row of each key you press",
             9: "keys you press go dark and fade back",
             12: "keys you press light up and fade"}
 COLS, ROWS = 22, 7                           # rough key grid, to measure distances in keys
+# the picture's bottom row (G1-G5, volume/brightness key, knob, media keys): no RGB effect lighting
+EXTRA_KEYS = {6, 23, 29, 41, 47, 71, 77, 88, 113, 125}
 
 
 def hue(h, v=1.0):
@@ -48,7 +50,7 @@ def frame(hw, t, centers, color, speed, custom=None, colors=None):
     color: 0-7 (7 = multi), speed: 0..1, colors: the effect's 7 colours from the keyboard."""
     rate = 0.5 + speed                        # 0.5x .. 1.5x
     base = (colors or COLOR_RGB)[color] if color < MULTI else None
-    keys = sorted(centers)
+    keys = sorted(i for i in centers if i not in EXTRA_KEYS)
     hits = presses(t, keys, every=1.2 / rate) if hw in REACTIVE else []
     out = {}
     for i, (x, y) in centers.items():
@@ -73,9 +75,10 @@ def frame(hw, t, centers, color, speed, custom=None, colors=None):
                     if abs(y - ky) * ROWS > 0.5:              # the pressed key's row, each key its own
                         continue                              # rainbow colour, fading behind the front
                     dx = abs(x - kx) * COLS
-                    front = age * 14 * rate
+                    front = age * 12 * rate
                     if dx <= front:
-                        glow = max(0.0, 1 - (front - dx) / 5)
+                        behind = front - dx                   # keys stay lit a while, then dim
+                        glow = 1.0 if behind < 4 else max(0.0, 1 - (behind - 4) / 6)
                         if glow > level:
                             level, tint = glow, hue(x * 1.3 + rnd(tp))
                 elif hw == 7:                                 # Ripples: fading rings
@@ -124,8 +127,8 @@ def frame(hw, t, centers, color, speed, custom=None, colors=None):
         elif hw == 21:                                        # Self-define
             c = (custom or {}).get(i, (0, 0, 0))
         out[i] = c
-    if hw in (6, 16, 18):                   # our firmware versions of these leave G1-G5 dark
-        for i in (6, 23, 29, 41, 47):
+    if hw != 21:                            # effects don't light the bottom row (Self-define can)
+        for i in EXTRA_KEYS:
             if i in out:
                 out[i] = (0, 0, 0)
     return out
