@@ -415,10 +415,8 @@ class App(tk.Tk):
         self.nb = nb
         self.slider_busy = False
         self.build_lighting(nb)
-        self.build_colors(nb)
         self.build_keys(nb)
         self.build_macros(nb)
-        self.build_backup(nb)
         self.build_settings(nb)
         self.build_firmware(nb)
         self.connect()
@@ -480,7 +478,7 @@ class App(tk.Tk):
         self.kb = self.wl = None
         try:
             self.kb = k580.K580()
-            self.status.config(text=f"Connected by cable  ✓   (firmware version 0x{self.kb.firmware_version():04X})")
+            self.status.config(text="Connected by cable  ✓")
             first = os.path.join(HERE, "backups", "first-run.json")
             if not os.path.exists(first):
                 os.makedirs(os.path.dirname(first), exist_ok=True)
@@ -555,8 +553,8 @@ class App(tk.Tk):
         ttk.Button(erow, text="▶", width=3, command=lambda: step(1)).pack(side="left", padx=(4, 0))
         # how-to for Self-define, shown right under the effect box only when it's picked
         self.sd_note = ttk.Label(ecell, style="Muted.TLabel", text=(
-            "Give each key its own colour: on the Key colors page, click keys,\n"
-            "pick a colour, then click Save to keyboard."))
+            "Click keys on the keyboard above, then pick a colour.\n"
+            "It's saved to the keyboard as you go."))
         ec.bind("<<ComboboxSelected>>", lambda e: self.apply_lighting(new_effect=True))
         ttk.Label(f, text="Brightness").grid(row=3, column=0, sticky="w", pady=8)
         self.snap_slider(f, self.bright, self.brightness_levels).grid(row=3, column=1, sticky="w", pady=6)
@@ -568,13 +566,19 @@ class App(tk.Tk):
         ccell.grid(row=5, column=1, sticky="w", pady=(8, 0))
         self.palette = bytearray(k580.DEFAULT_PALETTE * 24)   # the keyboard's 7 colours per effect
         self.color_box = self.color_swatches(ccell)
-        self.color_box.pack(anchor="w")
-        self._palette_job = None
+        self._palette_job = self._keys_job = None
         self._syncing = False
-        self.lpicker = ColorPicker(ccell, on_pick=self.pick_effect_color)
-        self.lpicker.pack(anchor="w", pady=(10, 0))
-        ttk.Button(ccell, text="Reset colour", command=self.reset_effect_colors) \
-            .pack(anchor="w", pady=(8, 0))
+        # Self-define: per-key colours, painted on the keyboard picture above
+        self.ckb = self.lkb
+        self.key_colors = {}            # matrix index -> (r, g, b)
+        self.sel_row = ttk.Frame(ccell)
+        ttk.Button(self.sel_row, text="Select all", command=lambda: self.lkb.select_all(True)) \
+            .pack(side="left", padx=(0, 8))
+        ttk.Button(self.sel_row, text="Select none", command=lambda: self.lkb.select_all(False)).pack(side="left")
+        self.lpicker = ColorPicker(ccell, on_pick=self.lighting_pick)
+        self.reset_btn = ttk.Button(ccell, text="Reset colour", command=self.reset_effect_colors)
+        self.ccell = ccell
+        self.layout_color_cell(False)
         self.effect_note = ttk.Label(f, text="Changes apply instantly.", style="Muted.TLabel", wraplength=560)
         self.effect_note.grid(row=6, column=0, columnspan=2, sticky="w", pady=12)
 
@@ -591,9 +595,33 @@ class App(tk.Tk):
         self.media_note.grid(row=10, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
     def preview_clicked(self, idx):
-        """The Lighting keyboard is only a preview: don't keep keys selected."""
-        self.lkb.selected.clear()
-        self.lkb.redraw()
+        """Self-define: clicking keys selects them for painting. Otherwise the keyboard is only a
+        preview, so don't keep keys selected."""
+        if self.current_hw() != 21:
+            self.lkb.selected.clear()
+            self.lkb.redraw()
+
+    def layout_color_cell(self, self_define):
+        """Self-define: Select all/none + wheel. Other effects: Solid colour/Rainbow + wheel + Reset."""
+        for w in (self.color_box, self.sel_row, self.lpicker, self.reset_btn):
+            w.pack_forget()
+        if self_define:
+            self.sel_row.pack(anchor="w")
+            self.lpicker.pack(anchor="w", pady=(10, 0))
+        else:
+            self.color_box.pack(anchor="w")
+            self.lpicker.pack(anchor="w", pady=(10, 0))
+            self.reset_btn.pack(anchor="w", pady=(8, 0))
+            if self.lkb.selected:
+                self.lkb.selected.clear()
+                self.lkb.redraw()
+
+    def lighting_pick(self, rgb):
+        """The Lighting wheel: paints the selected keys in Self-define, else sets the effect colour."""
+        if self.current_hw() == 21:
+            self.apply_color(rgb)
+        else:
+            self.pick_effect_color(rgb)
 
     def animate_preview(self):
         """Redraw the Lighting page's keyboard ~20 times a second while it's showing."""
@@ -722,9 +750,7 @@ class App(tk.Tk):
         self.wheel_on.set(wheel and led[self.WHEEL_BYTE] != 0)
         self.wheel_toggle.config(state="normal" if wheel else "disabled")
         self.media_note.config(text={
-            "switch": "When off, media keys flash when pressed and the volume/brightness key\n"
-                      "lights only in brightness mode (like stock). Fn + Play/Pause and\n"
-                      "Fn + the volume/brightness key switch them on the keyboard too.",
+            "switch": "On the keyboard: Fn + Play/Pause and Fn + the volume/brightness key.",
             "switch-nofn": "When off, media keys flash when pressed and the volume/brightness key\n"
                            "lights only in brightness mode (like stock).",
             "switch-fine": "When off, media keys flash when pressed and the volume/brightness key\n"
@@ -1184,6 +1210,7 @@ class App(tk.Tk):
         self.speed_slider.config(cursor="hand2" if speed else "")
         self.color_box.enabled = color
         self.color_box.redraw()
+        self.layout_color_cell(hw == 21)
         name = k580.EFFECTS.get(hw, "OFF")
         note = "Changes apply instantly."
         if hw in (3, 6, 15, 16, 17):
@@ -1231,7 +1258,7 @@ class App(tk.Tk):
             self.color.set(k580.COLORS[b & 7])
 
     # ---------------- keys
-    KB_PAD = 10                          # Keys, Macros and Key colors share this keyboard placement
+    KB_PAD = 10                          # Lighting, Keys and Macros share this keyboard placement
 
     def keyboard_page(self, nb, title, on_click, hint):
         """A page with the clickable keyboard at the top and a hint line under it, laid out the same
@@ -1599,30 +1626,15 @@ class App(tk.Tk):
         self.rec_view.config(state="disabled")
 
     # ---------------- custom per-key colors
-    def build_colors(self, nb):
-        f, self.ckb, _ = self.keyboard_page(
-            nb, "Key colors", lambda i: None, "Click keys to select them, then click a colour.")
-        self.key_colors = {}            # matrix index -> (r, g, b)
-
-        self.picker = ColorPicker(f, on_pick=self.apply_color)
-        self.picker.grid(row=2, column=0, rowspan=3, sticky="nw", pady=(6, 0))
-
-        side = ttk.Frame(f)
-        side.grid(row=2, column=1, sticky="nw", padx=(16, 0), pady=(6, 0))
-        ttk.Button(side, text="Select all", command=lambda: self.ckb.select_all(True)).pack(fill="x", pady=4)
-        ttk.Button(side, text="Select none", command=lambda: self.ckb.select_all(False)).pack(fill="x", pady=4)
-        ttk.Button(side, text="Save to keyboard", command=self.save_colors, style="Accent.TButton") \
-            .pack(fill="x", pady=(14, 4))
-        ttk.Label(f, text="Colours show here right away. Save sends them to the keyboard and switches\n"
-                          "the effect to Self-define. Needs the cable.",
-                  style="Muted.TLabel").grid(row=5, column=0, columnspan=3, sticky="w", pady=12)
-
     def apply_color(self, rgb):
         if not self.ckb.selected:
             return
         for idx in self.ckb.selected:
             self.key_colors[idx] = rgb
-        self.ckb.set_fills(self.key_colors)
+        # save once the wheel stops moving (it's a flash write on the keyboard)
+        if self._keys_job:
+            self.after_cancel(self._keys_job)
+        self._keys_job = self.after(500, self.save_colors)
 
     def load_colors(self):
         if not self.kb:
@@ -1631,10 +1643,11 @@ class App(tk.Tk):
         n = k580.MATRIX_KEYS
         for idx in self.ckb.rects:
             self.key_colors[idx] = (planes[idx], planes[n + idx], planes[2 * n + idx])
-        self.ckb.set_fills(self.key_colors)
 
     def save_colors(self):
-        if not self.need_kb():
+        """Send the Self-define key colours to the keyboard (and make sure Self-define is on)."""
+        self._keys_job = None
+        if not self.kb:
             return
         n = k580.MATRIX_KEYS
         planes = bytearray(n * 3)
@@ -1643,11 +1656,10 @@ class App(tk.Tk):
         self.kb.write(k580.OP_COLOR_GROUP, bytes(planes), sub=0)
         time.sleep(0.2)
         led = bytearray(self.get_led())
-        led[10], led[9] = 21, 1                    # Self-define effect
-        self.set_led(led)
+        if (led[10], led[9]) != (21, 1):
+            led[10], led[9] = 21, 1                # Self-define effect
+            self.set_led(led)
         self.led = led
-        self.load_lighting()
-        messagebox.showinfo("K580", "Colors saved. Effect set to Self-define.")
 
     # ---------------- settings page
     SLEEP_OPTIONS = {"Keyboard default": 0, "1 minute": 2, "3 minutes": 6, "5 minutes": 10,
@@ -1713,7 +1725,11 @@ class App(tk.Tk):
         line("Updates", ttk.Button(f, text="Check for updates", command=self.check_updates),
              f"You have version {APP_VERSION}. Checks the project's GitHub page for a newer one.")
 
-        section("Reset")
+        section("Backup and reset")
+        bk = ttk.Frame(f)
+        ttk.Button(bk, text="Save backup…", command=self.save_backup).pack(side="left", padx=(0, 8))
+        ttk.Button(bk, text="Restore backup…", command=self.load_backup).pack(side="left")
+        line("Backup", bk, "A backup holds lighting, all 4 key layers and macros (including G-keys).")
         line("Factory reset", ttk.Button(f, text="Reset keyboard to factory settings", command=self.factory_reset),
              "Puts lighting, key assignments and macros back to how they came from the factory.\n"
              "Your custom firmware (if installed) stays. Needs the cable.")
@@ -1815,14 +1831,6 @@ class App(tk.Tk):
         messagebox.showinfo("K580", "Done. The keyboard is back to factory settings.")
 
     # ---------------- backup
-    def build_backup(self, nb):
-        f = ttk.Frame(nb, padding=12)
-        nb.add(f, text="Backup")
-        ttk.Button(f, text="Save backup…", command=self.save_backup).pack(anchor="w", pady=8)
-        ttk.Button(f, text="Restore backup…", command=self.load_backup).pack(anchor="w", pady=8)
-        ttk.Label(f, text="Backups hold lighting, all 4 key layers and macros (incl. G-keys).",
-                  style="Muted.TLabel").pack(anchor="w", pady=12)
-
     def save_backup(self):
         if not self.need_kb():
             return
