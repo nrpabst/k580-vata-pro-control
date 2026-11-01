@@ -101,7 +101,8 @@ def tables():
             idx = c * ROWS + r
             special = SKIP if idx in SKIP_KEYS else OFF if idx in DARK_KEYS else None
             wheel.append(special or int(ang * 128) & 0x7F)
-            fall.append(special or (-r * 20) & 0x7F)       # colours move down the rows
+            fall.append(special or (-r * 8) & 0x7F)        # colours move down the rows, neighbours
+                                                                # 1/16 of the rainbow apart
             storm.append(special or int(ang * 128 + rad * 7) & 0x7F)
     return wheel, fall, storm
 
