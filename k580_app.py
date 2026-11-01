@@ -190,7 +190,8 @@ def parse_macros(buf):
 
 
 def effect_slot(hw):
-    return k580.SLOT_HW.index(hw) if hw in k580.SLOT_HW else None
+    """Effect `hw` keeps its brightness/speed/color at lighting bytes 0x3A + 2 * slot (slot = hw - 1)."""
+    return hw - 1 if hw in k580.SLOT_HW else None
 
 
 # ---------------------------------------------------------------- app
@@ -259,15 +260,19 @@ class KeyboardView(tk.Canvas):
 
     def redraw(self):
         accent = k580_theme.hue_hex(getattr(self.master.winfo_toplevel(), "_accent_phase", 0.5), 0.65)
+        shown = self.__dict__.setdefault("_shown", {})
         for idx, r in self.rects.items():
             c = self.fills.get(idx)
             fill = "#%02x%02x%02x" % c if c else k580_theme.FIELD
             if idx in self.selected:
-                self.itemconfig(r, fill=fill, outline="#ffffff", width=3)
+                look = (fill, "#ffffff", 3)
             elif idx in self.marked:
-                self.itemconfig(r, fill=fill, outline=accent, width=2)
+                look = (fill, accent, 2)
             else:
-                self.itemconfig(r, fill=fill, outline=k580_theme.BORDER, width=1)
+                look = (fill, k580_theme.BORDER, 1)
+            if shown.get(idx) != look:            # only touch keys that changed (the preview redraws a lot)
+                shown[idx] = look
+                self.itemconfig(r, fill=look[0], outline=look[1], width=look[2])
 
 
 class ColorPicker(ttk.Frame):
@@ -528,7 +533,7 @@ class App(tk.Tk):
         ttk.Label(f, text="Color").grid(row=5, column=0, sticky="w", pady=8)
         self.color_box = self.color_swatches(f)
         self.color_box.grid(row=5, column=1, sticky="w")
-        self.effect_note = ttk.Label(f, text="Changes apply instantly.", style="Muted.TLabel")
+        self.effect_note = ttk.Label(f, text="Changes apply instantly.", style="Muted.TLabel", wraplength=560)
         self.effect_note.grid(row=6, column=0, columnspan=2, sticky="w", pady=12)
 
         ttk.Separator(f).grid(row=7, column=0, columnspan=2, sticky="ew", pady=12)
@@ -1081,10 +1086,11 @@ class App(tk.Tk):
         self.color_box.redraw()
         name = k580.EFFECTS.get(hw, "OFF")
         note = "Changes apply instantly."
-        if hw in (3, 15, 16, 17):
+        if hw in (3, 6, 15, 16, 17):
             note += f" {name} uses its own rainbow colors."
         elif hw == 21:
-            note += " Self-define uses the colors from the Key colors page."
+            note += (" Self-define shows your own colour for each key: set them on the Key colors"
+                     " page and click Save to keyboard.")
         elif hw == 1:
             note += " Fixed on doesn't move, so it has no speed."
         import k580_preview

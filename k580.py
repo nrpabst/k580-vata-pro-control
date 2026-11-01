@@ -252,7 +252,7 @@ COLORS = ["red", "green", "blue", "yellow", "magenta", "cyan", "white", "multi/r
 # hw effect id -> (has speed, has color), from the speed and color flags of LedOptN in KB.ini.
 # Effects without a color option draw their own rainbow and ignore the color setting.
 NO_SPEED = {1, 21}
-NO_COLOR = {3, 15, 16, 17, 21}
+NO_COLOR = {3, 6, 15, 16, 17, 21}
 
 
 def effect_options(hw):

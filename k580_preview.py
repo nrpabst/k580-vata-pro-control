@@ -1,7 +1,8 @@
 """Approximate on-screen preview of the keyboard's lighting effects.
 
 The keyboard doesn't report its LED colours to the PC, so these are look-alikes built from the
-effect, colour, speed and brightness settings, not a mirror of the real LEDs.
+effect, colour, speed and brightness settings, not a mirror of the real LEDs. Effects that react to
+key presses are shown with simulated presses.
 """
 import colorsys
 import math
@@ -9,9 +10,12 @@ import math
 COLOR_RGB = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255),
              (255, 255, 255)]
 MULTI = 7
-# effects that only react to key presses (nothing to show while idle)
-REACTIVE = {7: "ripples spread from the keys you press", 9: "keys you press fade out and back",
-            12: "keys light up when you press them"}
+# effects that react to key presses (the preview simulates presses)
+REACTIVE = {4: "a light spreads from each key you press out to the edges",
+            7: "ripples spread from the keys you press",
+            9: "keys you press go dark and fade back",
+            12: "keys you press light up and fade"}
+COLS, ROWS = 22, 7                           # rough key grid, to measure distances in keys
 
 
 def hue(h, v=1.0):
@@ -30,61 +34,89 @@ def rnd(i, n=0):
     return x - math.floor(x)
 
 
+def presses(t, keys, every=0.8, keep=4.0):
+    """Simulated key presses: [(time, key index)] in the last `keep` seconds."""
+    out = []
+    n = math.floor(t / every)
+    for k in range(n - int(keep / every), n + 1):
+        out.append((k * every, keys[int(rnd(k, 5) * len(keys)) % len(keys)]))
+    return out
+
+
 def frame(hw, t, centers, color, speed, custom=None):
     """{matrix index: (r, g, b)} for effect `hw` at time t (s). centers: {idx: (x, y)} in 0..1,
     color: 0-7 (7 = multi), speed: 0..1."""
-    v = 0.35 + 1.3 * speed                      # animation rate
+    rate = 0.5 + speed                        # 0.5x .. 1.5x
     base = COLOR_RGB[color] if color < MULTI else None
+    keys = sorted(centers)
+    hits = presses(t, keys, every=1.2 / rate) if hw in REACTIVE else []
     out = {}
     for i, (x, y) in centers.items():
-        dx, dy = x - 0.5, (y - 0.5) * 0.4
-        ang, rad = math.atan2(dy, dx) / (2 * math.pi), math.hypot(dx, dy)
+        dx, dy = x - 0.5, y - 0.5
+        ang = math.atan2(dy * ROWS, dx * COLS) / (2 * math.pi)
+        rad = math.hypot(dx * COLS, dy * ROWS) / 11          # 0 centre .. ~1 corners
+        c = (0, 0, 0)
         if hw == 1:                                           # Fixed on
             c = base or hue(x)
-        elif hw == 2:                                         # Respire
-            cycle = t * v * 0.5
-            level = 0.5 - 0.5 * math.cos(2 * math.pi * cycle)
-            c = scale(base or hue(math.floor(cycle) / 7), level)
-        elif hw == 3:                                         # Rainbow
-            c = hue(t * v * 0.2)
-        elif hw in (4, 5):                                    # Flash away / Raindrops
-            period = 1.6 if hw == 5 else 0.9
-            p = (t * v / period + rnd(i)) % 1.0
-            n = math.floor(t * v / period + rnd(i))
-            level = max(0.0, 1 - p * 3) if rnd(i, n) < 0.3 else 0.0
-            c = scale(base or hue(rnd(i, n + 7)), level)
-        elif hw == 6:                                         # Rainbow wheel
-            c = hue(ang + t * v * 0.3)
-        elif hw == 8:                                         # Stars twinkle
-            p = (t * v * 0.6 + rnd(i)) % 1.0
-            level = 0.15 + 0.85 * max(0.0, math.sin(math.pi * p)) ** 6
-            c = scale(base or hue(rnd(i, 3)), level)
-        elif hw == 9:                                         # Shadow disappear (idle: all lit)
-            c = base or hue(x)
+        elif hw == 2:                                         # Respire: slow breathing
+            cycle = t * (0.12 + 0.12 * speed)
+            c = scale(base or hue(math.floor(cycle) / 7), 0.5 - 0.5 * math.cos(2 * math.pi * cycle))
+        elif hw == 3:                                         # Rainbow: whole board, slowly
+            c = hue(t * (0.03 + 0.06 * speed))
+        elif hw in (4, 7, 9, 12):                             # key-press effects
+            level, tint = (1.0 if hw == 9 else 0.0), None
+            for tp, k in hits:
+                age = t - tp
+                kx, ky = centers[k]
+                d = math.hypot((x - kx) * COLS, (y - ky) * ROWS)   # distance in keys
+                if hw == 4:                                   # Flash away: a band runs to the edges
+                    front = age * 12 * rate
+                    if front - 1.5 < d < front:
+                        level, tint = 1.0, hue(rnd(tp))
+                elif hw == 7:                                 # Ripples: fading rings
+                    front = age * 8 * rate
+                    ring = max(0.0, 1 - abs(d - front)) * max(0.0, 1 - age / 1.8)
+                    if ring > level:
+                        level, tint = ring, hue(rnd(tp))
+                elif hw == 9 and k == i:                      # Shadow disappear: off, then fades back
+                    level = min(level, min(1.0, age / (1.5 / rate)))
+                elif hw == 12 and k == i:                     # Reaction: on, then fades off
+                    level = max(level, 1 - age / (1.5 / rate))
+            c = scale(base or tint or hue(x), level)
+        elif hw == 5:                                         # Raindrops: random keys light and fade
+            p = (t * 0.6 * rate + rnd(i)) % 1.0
+            n = math.floor(t * 0.6 * rate + rnd(i))
+            c = scale(base or hue(rnd(i, n)), max(0.0, 1 - p * 2.5) if rnd(i, n + 1) < 0.5 else 0.0)
+        elif hw == 6:                                         # Rainbow wheel: colours turn round the centre
+            c = hue(ang + t * (0.08 + 0.15 * speed))
+        elif hw == 8:                                         # Stars twinkle: random keys twinkle
+            p = (t * 0.5 * rate + rnd(i)) % 1.0
+            n = math.floor(t * 0.5 * rate + rnd(i))
+            on = rnd(i, n + 3) < 0.35
+            c = scale(base or hue(rnd(i, n)), math.sin(math.pi * p) if on else 0.0)
         elif hw == 10:                                        # Retro snake
-            order = (round(y * 6) * 1.0 + (x if round(y * 6) % 2 == 0 else 1 - x)) / 7
-            head = (t * v * 0.12) % 1.0
-            d = (head - order) % 1.0
+            row = round(y * (ROWS - 1))
+            order = (row + (x if row % 2 == 0 else 1 - x)) / ROWS
+            d = ((t * 0.06 * rate) - order) % 1.0
             c = scale(base or hue(order), max(0.0, 1 - d * 12))
         elif hw == 11:                                        # Neon stream
-            c = hue(x - t * v * 0.25)
-        elif hw == 13:                                        # Sine wave
-            level = 0.5 + 0.5 * math.sin(2 * math.pi * (x * 2 - t * v * 0.4))
+            c = hue(x - t * (0.08 + 0.15 * speed))
+        elif hw == 13:                                        # Sine wave: dim board, bright sine line
+            wave = 0.5 + 0.35 * math.sin(2 * math.pi * (x * 1.5 - t * (0.15 + 0.25 * speed)))
+            level = 0.2 + 0.8 * math.exp(-((y - wave) / 0.13) ** 2)
             c = scale(base or hue(x), level)
-        elif hw == 14:                                        # Retinue scanning
-            pos = 0.5 - 0.5 * math.cos(math.pi * t * v * 0.35)
-            c = scale(base or hue(t * 0.1), max(0.0, 1 - abs(x - pos) * 6))
+        elif hw == 14:                                        # Retinue scanning: a bar sweeps across
+            pos = 0.5 - 0.5 * math.cos(math.pi * t * (0.2 + 0.3 * speed))
+            c = scale(base or hue(t * 0.05), max(0.0, 1 - abs(x - pos) * 8))
         elif hw == 15:                                        # Rotating windmill
-            c = hue(ang * 2 + t * v * 0.3)
+            c = hue(ang * 2 + t * (0.08 + 0.15 * speed))
         elif hw == 16:                                        # Colorful waterfall
-            c = hue(y * 0.8 - t * v * 0.3)
-        elif hw == 17:                                        # Blossoming
-            c = hue(rad * 1.5 - t * v * 0.3)
-        elif hw == 18:                                        # Rotating storm
-            c = hue(ang + rad * 2 - t * v * 0.3)
+            c = hue(y * 0.8 - t * (0.08 + 0.15 * speed))
+        elif hw == 17:                                        # Blossoming: rainbow rings from the centre
+            c = hue(rad * 1.2 - t * (0.08 + 0.15 * speed))
+        elif hw == 18:                                        # Rotating storm: rainbow spiral
+            c = hue(ang + rad - t * (0.08 + 0.15 * speed))
         elif hw == 21:                                        # Self-define
             c = (custom or {}).get(i, (0, 0, 0))
-        else:                                                 # OFF, and Ripples/Reaction while idle
-            c = (0, 0, 0)
         out[i] = c
     return out
