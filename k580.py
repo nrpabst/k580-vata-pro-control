@@ -187,7 +187,9 @@ class K580:
         return self.read(0x80 | OP_COLOR_GROUP, SIZES[OP_COLOR_GROUP], sub=group)
 
     def get_rgb_table(self):
-        return self.read(0x80 | OP_RGB_TABLE, SIZES[OP_RGB_TABLE])
+        # The 0x8A read returns a copy of the lighting block, not this table, so read the flash
+        # page that 0x0A writes (0xA800) instead.
+        return self.read_flash(0xA800, SIZES[OP_RGB_TABLE])
 
     def fix_rgb_table(self):
         """Effects take their single colours from the RGB table (flash 0xA800, 7 colours x 22 effects).

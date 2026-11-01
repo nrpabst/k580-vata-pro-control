@@ -43,11 +43,11 @@ def presses(t, keys, every=0.8, keep=4.0):
     return out
 
 
-def frame(hw, t, centers, color, speed, custom=None):
+def frame(hw, t, centers, color, speed, custom=None, colors=None):
     """{matrix index: (r, g, b)} for effect `hw` at time t (s). centers: {idx: (x, y)} in 0..1,
-    color: 0-7 (7 = multi), speed: 0..1."""
+    color: 0-7 (7 = multi), speed: 0..1, colors: the effect's 7 colours from the keyboard."""
     rate = 0.5 + speed                        # 0.5x .. 1.5x
-    base = COLOR_RGB[color] if color < MULTI else None
+    base = (colors or COLOR_RGB)[color] if color < MULTI else None
     keys = sorted(centers)
     hits = presses(t, keys, every=1.2 / rate) if hw in REACTIVE else []
     out = {}

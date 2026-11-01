@@ -377,7 +377,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("K580 Control")
-        self.geometry("640x880")
+        self.geometry("640x960")
         self.resizable(False, False)
         self.kb = None
         self.wl = None
@@ -398,9 +398,9 @@ class App(tk.Tk):
         self.nb = nb
         self.slider_busy = False
         self.build_lighting(nb)
+        self.build_colors(nb)
         self.build_keys(nb)
         self.build_macros(nb)
-        self.build_colors(nb)
         self.build_backup(nb)
         self.build_settings(nb)
         self.build_firmware(nb)
@@ -546,9 +546,18 @@ class App(tk.Tk):
         ttk.Label(f, text="Speed").grid(row=4, column=0, sticky="w", pady=8)
         self.speed_slider = self.snap_slider(f, self.speed)
         self.speed_slider.grid(row=4, column=1, sticky="w", pady=6)
-        ttk.Label(f, text="Color").grid(row=5, column=0, sticky="w", pady=8)
-        self.color_box = self.color_swatches(f)
-        self.color_box.grid(row=5, column=1, sticky="w")
+        ttk.Label(f, text="Color").grid(row=5, column=0, sticky="nw", pady=(12, 0))
+        ccell = ttk.Frame(f)
+        ccell.grid(row=5, column=1, sticky="w", pady=(8, 0))
+        self.palette = bytearray(k580.DEFAULT_PALETTE * 24)   # the keyboard's 7 colours per effect
+        self.color_box = self.color_swatches(ccell)
+        self.color_box.pack(anchor="w")
+        self._palette_job = None
+        self._syncing = False
+        self.lpicker = ColorPicker(ccell, on_pick=self.pick_effect_color)
+        self.lpicker.pack(anchor="w", pady=(10, 0))
+        ttk.Button(ccell, text="Default colours for this effect", command=self.reset_effect_colors) \
+            .pack(anchor="w", pady=(8, 0))
         self.effect_note = ttk.Label(f, text="Changes apply instantly.", style="Muted.TLabel", wraplength=560)
         self.effect_note.grid(row=6, column=0, columnspan=2, sticky="w", pady=12)
 
@@ -581,7 +590,8 @@ class App(tk.Tk):
         speed = self.speed.get() / 4
         level = self.bright.get() / max(1, self.brightness_levels())
         fills = k580_preview.frame(hw, time.time(), self.lkb_centers, color, speed,
-                                   getattr(self, "key_colors", None))
+                                   getattr(self, "key_colors", None),
+                                   [self.effect_color(i, hw) for i in range(7)])
         bg = (0x1d, 0x20, 0x2a)                      # k580_theme.FIELD: unlit keys keep their colour
         out = {}
         for i, c in fills.items():
@@ -909,6 +919,8 @@ class App(tk.Tk):
             c.delete("all")
             current = self.color.get()
             for i, rgb in enumerate(self.SWATCH_RGB):
+                if rgb:
+                    rgb = "#%02x%02x%02x" % self.effect_color(i)
                 x = 2 + i * (size + gap)
                 if rgb:
                     c.create_rectangle(x, 2, x + size, 2 + size, fill=rgb, width=0)
@@ -928,6 +940,7 @@ class App(tk.Tk):
             i = int((e.x - 2) // (size + gap))
             if c.enabled and 0 <= i < n and e.x - 2 - i * (size + gap) <= size:
                 self.color.set(k580.COLORS[i])
+                self.sync_picker()
                 self.apply_lighting()
 
         c.redraw = redraw
@@ -935,6 +948,55 @@ class App(tk.Tk):
         self.color.trace_add("write", redraw)
         redraw()
         return c
+
+    def current_hw(self):
+        return next((h for h, n in k580.EFFECTS.items() if n == self.effect.get()), 0)
+
+    def effect_color(self, i, hw=None):
+        """Colour i (0-6) of an effect, from the keyboard's own colour table."""
+        hw = self.current_hw() if hw is None else hw
+        a = hw * 21 + i * 3
+        return tuple(self.palette[a:a + 3])
+
+    def sync_picker(self):
+        """Show the selected colour box's colour on the wheel (without writing anything)."""
+        if self.color.get() in k580.COLORS[:7]:
+            self._syncing = True
+            try:
+                self.lpicker.pick(self.effect_color(k580.COLORS.index(self.color.get())))
+            finally:
+                self._syncing = False
+
+    def pick_effect_color(self, rgb):
+        """Wheel or preset on the Lighting page: change the selected colour box of this effect."""
+        hw = self.current_hw()
+        if self._syncing or not self.kb or not k580.effect_options(hw)[1]:
+            return
+        if self.color.get() not in k580.COLORS[:7]:        # multi selected: edit the first box
+            self.color.set(k580.COLORS[0])
+            self.apply_lighting()
+        i = k580.COLORS.index(self.color.get())
+        a = hw * 21 + i * 3
+        self.palette[a:a + 3] = bytes(rgb)
+        self.color_box.redraw()
+        # write once the wheel stops moving (it's a flash write on the keyboard)
+        if self._palette_job:
+            self.after_cancel(self._palette_job)
+        self._palette_job = self.after(400, self.save_palette)
+
+    def save_palette(self):
+        self._palette_job = None
+        if self.kb:
+            data = bytearray(self.palette[:512])
+            data[0x1FA:0x1FC] = bytes([0x5A, 0xA5])
+            self.kb.write(k580.OP_RGB_TABLE, bytes(data))
+
+    def reset_effect_colors(self):
+        hw = self.current_hw()
+        self.palette[hw * 21:hw * 21 + 21] = k580.DEFAULT_PALETTE
+        self.color_box.redraw()
+        self.sync_picker()
+        self.save_palette()
 
     def snap_slider(self, parent, var, levels=lambda: 4, length=260):
         """A slider that moves freely while dragged and eases onto the nearest level on release.
@@ -1042,6 +1104,8 @@ class App(tk.Tk):
 
     def load_lighting(self):
         self.led = bytearray(self.get_led())
+        if self.kb:
+            self.palette = bytearray(self.kb.get_rgb_table())
         self.refresh_media_state()
         self.show_lighting()
         self.load_settings()
@@ -1061,6 +1125,7 @@ class App(tk.Tk):
 
     def show_lighting(self):
         self.show_battery(self.led)
+        self.after_idle(self.sync_picker)
         hw = self.led[10]
         self.effect.set(k580.EFFECTS.get(hw, "OFF"))
         self.show_effect_options(hw)
