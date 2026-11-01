@@ -11,6 +11,7 @@ Packets are 520-byte feature reports; see PROTOCOL.md for the layout.
 import ctypes
 import json
 import sys
+import threading
 import time
 from ctypes import wintypes
 
@@ -79,6 +80,7 @@ class K580:
         if h in (None, wintypes.HANDLE(-1).value):
             raise OSError(ctypes.get_last_error(), "CreateFile failed")
         self.h = h
+        self.lock = threading.RLock()            # one request/reply exchange at a time
 
     def close(self):
         _k32.CloseHandle(self.h)
@@ -111,6 +113,10 @@ class K580:
 
     def read(self, op, size, sub=0):
         """Read `size` bytes for read-opcode `op` (0x8x)."""
+        with self.lock:
+            return self._read(op, size, sub)
+
+    def _read(self, op, size, sub=0):
         out = bytearray()
         count = (size + CHUNK - 1) // CHUNK
         for i in range(count):
@@ -120,6 +126,10 @@ class K580:
     def read_chunk(self, op, index, count, n=CHUNK, sub=0):
         """Read chunk `index` of a `count`-chunk read. The keyboard serves any chunk on its own,
         so e.g. a few bytes of the 64 KB flash dump (0x88) don't need the whole dump."""
+        with self.lock:
+            return self._read_chunk(op, index, count, n, sub)
+
+    def _read_chunk(self, op, index, count, n=CHUNK, sub=0):
         self._set(self._req(op, sub, count, index, n))
         time.sleep(0.02)
         reply = bytearray(REPORT_LEN)
@@ -144,6 +154,10 @@ class K580:
 
     def write(self, op, data, sub=0):
         """Write `data` with write-opcode `op` (0x0x), split into 512-byte packets."""
+        with self.lock:
+            self._write(op, data, sub)
+
+    def _write(self, op, data, sub=0):
         if op in UNSAFE_WRITE_OPS:
             raise ValueError(f"refusing write op 0x{op:02x}: may write MCU flash")
         count = max(1, (len(data) + CHUNK - 1) // CHUNK)

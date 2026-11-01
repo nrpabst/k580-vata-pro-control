@@ -52,6 +52,7 @@ class Dongle:
         self.h = _k32.CreateFileW(path, 0x80000000, 3, None, 3, 0, None)
         self.hw = _k32.CreateFileW(path, 0x40000000, 3, None, 3, 0, None)
         self.replies = []
+        self.lock = threading.RLock()            # one query/write at a time (UI + background poll)
         self._stop = False
         threading.Thread(target=self._reader, daemon=True).start()
 
@@ -78,6 +79,10 @@ class Dongle:
 
     def query(self, cmd, sub=0, size=0, timeout=1.5):
         """Send a read request and gather the reply packets that echo `cmd`."""
+        with self.lock:
+            return self._query(cmd, sub, size, timeout)
+
+    def _query(self, cmd, sub=0, size=0, timeout=1.5):
         self.replies.clear()
         self.send(packet(cmd, sub, data=b""))
         end = time.time() + timeout
@@ -97,6 +102,11 @@ class Dongle:
 
 def write(d, cmd, data, sub=0, timeout=1.0):
     """Write `data` in 14-byte packets; the keyboard echoes each packet as an ack."""
+    with d.lock:
+        _write(d, cmd, data, sub, timeout)
+
+
+def _write(d, cmd, data, sub=0, timeout=1.0):
     count = (len(data) + PAYLOAD - 1) // PAYLOAD
     for i in range(count):
         d.replies.clear()

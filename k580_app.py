@@ -8,6 +8,7 @@ import json
 import math
 import os
 import sys
+import threading
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -1440,22 +1441,34 @@ class App(tk.Tk):
         self._poll_n = getattr(self, "_poll_n", 0) + 1
         if self._poll_n % 2 == 0:              # fallback; device and dongle events trigger it sooner
             self.watch_connection()
-        if self._poll_n % 10 == 0 and self.state() == "normal" and (self.kb or self.wl):
-            try:                                # battery, every 10 s on any page
-                self.show_battery(self.get_led())
+        # a read finished in the background since the last tick: use it
+        led, self._polled = getattr(self, "_polled", None), None
+        if led is not None and self.led and len(led) >= 0x80 and led[0x7E:0x80] == b"\x5a\xa5":
+            self.show_battery(led)
+            # only the settings matter here, not the battery bytes that change every reading
+            changed = led[:0x1C] != self.led[:0x1C] or led[0x1F:] != self.led[0x1F:]
+            if changed and not self.slider_busy:
+                self.led = led
+                self.show_lighting()
+                self.refresh_media_state()      # Fn + Play/Pause etc. flip the key-light switches
+        on_lighting = self.state() == "normal" and self.nb.tab(self.nb.select(), "text") == "Lighting"
+        if (self.kb or self.wl) and (on_lighting or self._poll_n % 10 == 0):
+            self.read_led_in_background()
+
+    def read_led_in_background(self):
+        """Read the lighting block on a worker thread, so a slow dongle never freezes the window."""
+        if getattr(self, "_reading", False):
+            return
+        self._reading = True
+
+        def work():
+            try:
+                self._polled = bytearray(self.get_led())
             except Exception:
                 pass
-        if (self.state() != "normal" or self.slider_busy or not (self.kb or self.wl)
-                or self.nb.tab(self.nb.select(), "text") != "Lighting"):
-            return
-        try:
-            led = bytearray(self.get_led())
-        except Exception:
-            return
-        if self.led and led != self.led and led[0x7E:0x80] == b"\x5a\xa5":
-            self.led = led
-            self.show_lighting()
-            self.refresh_media_state()          # Fn + Play/Pause etc. flip the key-light switches
+            finally:
+                self._reading = False
+        threading.Thread(target=work, daemon=True).start()
 
     def watch_connection(self):
         """Every few seconds: notice the cable being unplugged or plugged in, and switch between
