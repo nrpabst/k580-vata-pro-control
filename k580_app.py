@@ -101,6 +101,9 @@ def actions():
     a["Brightness - (lighting)"] = bytes.fromhex("08030200")
     a["Speed + (lighting)"] = bytes.fromhex("08040100")
     a["Speed - (lighting)"] = bytes.fromhex("08040200")
+    # custom firmware light switches (bound on the Fn layer automatically)
+    a["Media key lights on/off (lighting)"] = bytes.fromhex("07000000")
+    a["Volume/brightness key light on/off (lighting)"] = bytes.fromhex("07000013")
     return a
 
 
@@ -566,7 +569,8 @@ class App(tk.Tk):
         self.fw_hint = ttk.Label(f, text="", style="Muted.TLabel")
         self.fw_hint.grid(row=5, column=0, columnspan=2, sticky="w")
         nb.bind("<<NotebookTabChanged>>",
-                lambda e: self.refresh_media_state() if nb.tab(nb.select(), "text") == "Firmware" else None)
+                lambda e: self.refresh_media_state() if nb.tab(nb.select(), "text") == "Firmware" else None,
+                add="+")
 
     # ---------------- media-key lights (firmware)
     # The "switch" firmware lights the media keys unless lighting byte 0x11 is set
@@ -1074,52 +1078,79 @@ class App(tk.Tk):
             self.color.set(k580.COLORS[b & 7])
 
     # ---------------- keys
+    KB_PAD = 10                          # Keys, Macros and Key colors share this keyboard placement
+
+    def keyboard_page(self, nb, title, on_click, hint):
+        """A page with the clickable keyboard at the top and a hint line under it, laid out the same
+        on every page that has one."""
+        f = ttk.Frame(nb, padding=self.KB_PAD)
+        nb.add(f, text=title)
+        kb = KeyboardView(f, on_click=on_click)
+        kb.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 6))
+        info = ttk.Label(f, text=hint, style="Muted.TLabel")
+        info.grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 6))
+        return f, kb, info
+
     def build_keys(self, nb):
-        f = ttk.Frame(nb, padding=12)
-        nb.add(f, text="Keys")
+        f, self.kkb, self.key_info = self.keyboard_page(
+            nb, "Keys", self.key_clicked, "Click a key to see or change what it does.")
+        self.key_sel = None
         self.layer = tk.StringVar(value="Normal")
-        self.key = tk.StringVar()
         self.category = tk.StringVar(value="Key")
         self.action = tk.StringVar()
-        keys = [f"{n}  (#{i})" for i, n in sorted(k580.KEY_NAMES.items(), key=lambda kv: kv[1])]
-        ttk.Label(f, text="Layer").grid(row=0, column=0, sticky="w", pady=8)
+        f.columnconfigure(1, weight=1)
+
+        ttk.Label(f, text="Layer").grid(row=2, column=0, sticky="w", pady=8)
         lc = ttk.Combobox(f, textvariable=self.layer, values=["Normal", "Fn (while holding Fn)"],
-                          state="readonly", width=30)
-        lc.grid(row=0, column=1, columnspan=3, sticky="w")
+                          state="readonly", width=24)
+        lc.grid(row=2, column=1, columnspan=3, sticky="w")
         lc.bind("<<ComboboxSelected>>", lambda e: self.show_key())
-        ttk.Label(f, text="Key").grid(row=1, column=0, sticky="w", pady=8)
-        kc = ttk.Combobox(f, textvariable=self.key, values=keys, state="readonly", width=30)
-        kc.grid(row=1, column=1, columnspan=3, sticky="w")
-        kc.bind("<<ComboboxSelected>>", lambda e: self.show_key())
-        ttk.Label(f, text="Currently").grid(row=2, column=0, sticky="w", pady=8)
+        ttk.Label(f, text="Currently").grid(row=3, column=0, sticky="w", pady=8)
         self.current = ttk.Label(f, text="-")
-        self.current.grid(row=2, column=1, columnspan=3, sticky="w")
+        self.current.grid(row=3, column=1, columnspan=3, sticky="w")
 
-        ttk.Separator(f).grid(row=3, column=0, columnspan=4, sticky="ew", pady=12)
-        ttk.Label(f, text="Type").grid(row=4, column=0, sticky="w", pady=8)
-        cc = ttk.Combobox(f, textvariable=self.category, values=CATEGORIES, state="readonly", width=14)
-        cc.grid(row=4, column=1, sticky="w")
+        ttk.Separator(f).grid(row=4, column=0, columnspan=4, sticky="ew", pady=10)
+        ttk.Label(f, text="Make it").grid(row=5, column=0, sticky="w", pady=8)
+        row = ttk.Frame(f)
+        row.grid(row=5, column=1, columnspan=3, sticky="w")
+        cc = ttk.Combobox(row, textvariable=self.category, values=CATEGORIES, state="readonly", width=12)
+        cc.pack(side="left")
         cc.bind("<<ComboboxSelected>>", lambda e: self.fill_actions())
-        ttk.Label(f, text="Function").grid(row=5, column=0, sticky="w", pady=8)
-        self.action_box = ttk.Combobox(f, textvariable=self.action, state="readonly", width=30)
-        self.action_box.grid(row=5, column=1, columnspan=3, sticky="w")
-        ttk.Button(f, text="Apply", command=self.apply_key, style="Accent.TButton").grid(row=6, column=1, sticky="w", pady=10)
+        self.action_box = ttk.Combobox(row, textvariable=self.action, state="readonly", width=24)
+        self.action_box.pack(side="left", padx=(8, 8))
+        ttk.Button(row, text="Apply", command=self.apply_key, style="Accent.TButton").pack(side="left")
 
-        ttk.Separator(f).grid(row=7, column=0, columnspan=4, sticky="ew", pady=12)
-        ttk.Label(f, text="Key combination").grid(row=8, column=0, sticky="w")
+        ttk.Label(f, text="Or a shortcut").grid(row=6, column=0, sticky="w", pady=8)
         self.combo_mods = {m: tk.BooleanVar() for m in ("LCtrl", "LShift", "LAlt", "LWin")}
         mf = ttk.Frame(f)
-        mf.grid(row=8, column=1, columnspan=3, sticky="w")
+        mf.grid(row=6, column=1, columnspan=3, sticky="w")
         for m, var in self.combo_mods.items():
             ttk.Checkbutton(mf, text=m[1:], variable=var).pack(side="left", padx=(0, 6))
         self.combo_key = tk.StringVar()
-        ttk.Combobox(mf, textvariable=self.combo_key, values=list(HID), state="readonly", width=8)             .pack(side="left")
-        ttk.Button(f, text="Apply combination", command=self.apply_combo, style="Accent.TButton").grid(row=9, column=1, sticky="w", pady=10)
+        ttk.Label(mf, text="+").pack(side="left", padx=(0, 6))
+        ttk.Combobox(mf, textvariable=self.combo_key, values=list(HID), state="readonly", width=8) \
+            .pack(side="left")
+        ttk.Button(mf, text="Apply", command=self.apply_combo, style="Accent.TButton") \
+            .pack(side="left", padx=(8, 0))
 
-        ttk.Separator(f).grid(row=10, column=0, columnspan=4, sticky="ew", pady=12)
-        ttk.Button(f, text="Reset this key", command=self.reset_key).grid(row=11, column=1, sticky="w")
-        ttk.Label(f, text="Macros are assigned on the Macros page.", style="Muted.TLabel")             .grid(row=12, column=0, columnspan=4, sticky="w", pady=10)
+        ttk.Separator(f).grid(row=7, column=0, columnspan=4, sticky="ew", pady=10)
+        ttk.Button(f, text="Reset this key", command=self.reset_key).grid(row=8, column=0, columnspan=2,
+                                                                         sticky="w")
+        ttk.Label(f, text="Changed keys are outlined. Macros are assigned on the Macros page.",
+                  style="Muted.TLabel").grid(row=9, column=0, columnspan=4, sticky="w", pady=10)
         self.fill_actions()
+        nb.bind("<<NotebookTabChanged>>",
+                lambda e: self.show_key() if self.kb and nb.tab(nb.select(), "text") == "Keys" else None,
+                add="+")
+
+    def key_clicked(self, idx):
+        """Keys page: one key at a time."""
+        if idx is None:
+            return
+        self.key_sel = idx
+        self.kkb.selected = {idx}
+        self.kkb.redraw()
+        self.show_key()
 
     def fill_actions(self):
         names = [n for n in ACTIONS if category_of(n) == self.category.get()]
@@ -1130,15 +1161,29 @@ class App(tk.Tk):
         return 0 if self.layer.get() == "Normal" else 1
 
     def _key_idx(self):
-        k = self.key.get()
-        return int(k.split("#")[1].rstrip(")")) if k else None
+        return self.key_sel
 
     def show_key(self):
-        if not self.need_kb() or self._key_idx() is None:
+        if not self.need_kb():
             return
         m = self.kb.get_matrix(self._layer_idx())
+        self.mark_changed_keys(m)
         i = self._key_idx()
+        if i is None:
+            return
+        name = k580.KEY_NAMES.get(i, "#%d" % i)
+        self.key_info.config(text="Selected: " + KeyboardView.SHORT.get(name, name))
         self.current.config(text=describe(m[i * 4:i * 4 + 4]))
+
+    def mark_changed_keys(self, m):
+        """Outline keys that differ from how the app first found the keyboard."""
+        path = os.path.join(HERE, "backups", "first-run.json")
+        try:
+            with open(path) as fh:
+                first = bytes.fromhex(json.load(fh)["matrix"][self._layer_idx()])
+        except (OSError, KeyError, ValueError, IndexError):
+            return
+        self.kkb.set_marked({i for i in self.kkb.rects if m[i * 4:i * 4 + 4] != first[i * 4:i * 4 + 4]})
 
     def _set_entry(self, entry):
         if not self.need_kb() or self._key_idx() is None:
@@ -1178,8 +1223,9 @@ class App(tk.Tk):
                     "Repeat until any key is pressed": (k580.MACRO_UNTIL_KEY, 1)}
 
     def build_macros(self, nb):
-        f = ttk.Frame(nb, padding=10)
-        nb.add(f, text="Macros")
+        # keyboard picture: click keys to choose where macros go
+        f, self.mkb, self.mkey_info = self.keyboard_page(
+            nb, "Macros", lambda i: self.refresh_macro_keys(), "Click keys on the keyboard to select them.")
         self.macros = []                 # [(name, [4-byte events])] as stored on the keyboard
         self.recorded = []
         self.recording = False
@@ -1188,11 +1234,6 @@ class App(tk.Tk):
         self.mmode = tk.StringVar(value="Play once")
         self.mcount = tk.IntVar(value=2)
 
-        # keyboard picture: click keys to choose where macros go
-        self.mkb = KeyboardView(f, on_click=lambda i: self.refresh_macro_keys())
-        self.mkb.grid(row=0, column=0, columnspan=2, pady=(0, 8))
-        self.mkey_info = ttk.Label(f, text="Click keys on the keyboard to select them.", style="Muted.TLabel")
-        self.mkey_info.grid(row=1, column=0, columnspan=2, sticky="w")
 
         # left: saved macros
         left = ttk.Frame(f)
@@ -1406,25 +1447,22 @@ class App(tk.Tk):
 
     # ---------------- custom per-key colors
     def build_colors(self, nb):
-        f = ttk.Frame(nb, padding=8)
-        nb.add(f, text="Key colors")
+        f, self.ckb, _ = self.keyboard_page(
+            nb, "Key colors", lambda i: None, "Click keys to select them, then click a colour.")
         self.key_colors = {}            # matrix index -> (r, g, b)
-        self.ckb = KeyboardView(f, on_click=lambda i: None)
-        self.ckb.grid(row=0, column=0, columnspan=3, pady=8)
 
         self.picker = ColorPicker(f, on_pick=self.apply_color)
-        self.picker.grid(row=1, column=0, rowspan=3, sticky="nw", pady=(10, 0))
+        self.picker.grid(row=2, column=0, rowspan=3, sticky="nw", pady=(6, 0))
 
         side = ttk.Frame(f)
-        side.grid(row=1, column=1, sticky="nw", padx=(16, 0), pady=(10, 0))
+        side.grid(row=2, column=1, sticky="nw", padx=(16, 0), pady=(6, 0))
         ttk.Button(side, text="Select all", command=lambda: self.ckb.select_all(True)).pack(fill="x", pady=4)
         ttk.Button(side, text="Select none", command=lambda: self.ckb.select_all(False)).pack(fill="x", pady=4)
         ttk.Button(side, text="Save to keyboard", command=self.save_colors, style="Accent.TButton") \
             .pack(fill="x", pady=(14, 4))
-        ttk.Label(f, text="Click keys to select them, then click a colour: it's applied to the\n"
-                          "selected keys right away. Save sends them to the keyboard and switches\n"
+        ttk.Label(f, text="Colours show here right away. Save sends them to the keyboard and switches\n"
                           "the effect to Self-define. Needs the cable.",
-                  style="Muted.TLabel").grid(row=4, column=0, columnspan=3, sticky="w", pady=12)
+                  style="Muted.TLabel").grid(row=5, column=0, columnspan=3, sticky="w", pady=12)
 
     def apply_color(self, rgb):
         if not self.ckb.selected:
