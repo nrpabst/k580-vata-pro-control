@@ -281,11 +281,11 @@ class ColorPicker(ttk.Frame):
                                outline=k580_theme.BORDER if rgb != (0, 0, 0) else k580_theme.MUTED)
             if rgb == (0, 0, 0):
                 c.create_line(5, 21, 21, 5, fill=k580_theme.MUTED)          # "off"
-            c.grid(row=n // 6, column=n % 6, padx=2, pady=2)
+            c.grid(row=n // 6, column=n % 6, padx=2, pady=4)
             c.bind("<Button-1>", lambda e, v=rgb: self.pick(v))
 
         self.preview = tk.Canvas(sw, width=176, height=24, bg=k580_theme.PANEL, highlightthickness=0)
-        self.preview.grid(row=2, column=0, columnspan=6, pady=(8, 0), sticky="w")
+        self.preview.grid(row=2, column=0, columnspan=6, pady=(12, 0), sticky="w")
         self.prev_rect = self.preview.create_rectangle(2, 2, 60, 22, fill="#ff0000", outline=k580_theme.BORDER)
         self.prev_text = self.preview.create_text(68, 12, text="#FF0000", anchor="w", fill=k580_theme.FG,
                                                   font=("Consolas", 9))
@@ -363,7 +363,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("K580 Control")
-        self.geometry("640x780")
+        self.geometry("640x880")
         self.resizable(False, False)
         self.kb = None
         self.wl = None
@@ -502,24 +502,22 @@ class App(tk.Tk):
         self.bright = tk.DoubleVar()
         self.speed = tk.DoubleVar()
         self.color = tk.StringVar()
-        ttk.Label(f, text="Effect").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Label(f, text="Effect").grid(row=0, column=0, sticky="w", pady=8)
         ec = ttk.Combobox(f, textvariable=self.effect, values=names, state="readonly", width=24)
         ec.grid(row=0, column=1, sticky="w")
         ec.bind("<<ComboboxSelected>>", lambda e: self.apply_lighting(new_effect=True))
-        ttk.Label(f, text="Brightness").grid(row=1, column=0, sticky="w", pady=4)
-        self.snap_slider(f, self.bright, self.brightness_levels).grid(row=1, column=1, sticky="w")
-        ttk.Label(f, text="Speed").grid(row=2, column=0, sticky="w", pady=4)
+        ttk.Label(f, text="Brightness").grid(row=1, column=0, sticky="w", pady=8)
+        self.snap_slider(f, self.bright, self.brightness_levels).grid(row=1, column=1, sticky="w", pady=6)
+        ttk.Label(f, text="Speed").grid(row=2, column=0, sticky="w", pady=8)
         self.speed_slider = self.snap_slider(f, self.speed)
-        self.speed_slider.grid(row=2, column=1, sticky="w")
-        ttk.Label(f, text="Color").grid(row=3, column=0, sticky="w", pady=4)
-        self.color_box = ttk.Combobox(f, textvariable=self.color, values=k580.COLORS, state="readonly",
-                                      width=24)
+        self.speed_slider.grid(row=2, column=1, sticky="w", pady=6)
+        ttk.Label(f, text="Color").grid(row=3, column=0, sticky="w", pady=8)
+        self.color_box = self.color_swatches(f)
         self.color_box.grid(row=3, column=1, sticky="w")
-        self.color_box.bind("<<ComboboxSelected>>", lambda e: self.apply_lighting())
         self.effect_note = ttk.Label(f, text="Changes apply instantly.", style="Muted.TLabel")
         self.effect_note.grid(row=4, column=0, columnspan=2, sticky="w", pady=12)
 
-        ttk.Separator(f).grid(row=5, column=0, columnspan=2, sticky="ew", pady=8)
+        ttk.Separator(f).grid(row=5, column=0, columnspan=2, sticky="ew", pady=12)
         self.media_on = tk.BooleanVar(value=True)
         self.media_toggle = ttk.Checkbutton(f, text="Keep media-key lights on", variable=self.media_on,
                                             command=self.set_media_leds)
@@ -527,9 +525,9 @@ class App(tk.Tk):
         self.wheel_on = tk.BooleanVar(value=False)
         self.wheel_toggle = ttk.Checkbutton(f, text="Keep volume/brightness key light on",
                                             variable=self.wheel_on, command=self.set_wheel_led)
-        self.wheel_toggle.grid(row=7, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.wheel_toggle.grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.media_note = ttk.Label(f, text="", style="Muted.TLabel")
-        self.media_note.grid(row=8, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        self.media_note.grid(row=8, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
     # ---------------- firmware page
     FIRMWARE_NOTE = (
@@ -543,16 +541,16 @@ class App(tk.Tk):
         f = ttk.Frame(nb, padding=12)
         nb.add(f, text="Firmware")
         ttk.Label(f, text=self.FIRMWARE_NOTE, justify="left").grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(f, text="Installed now:").grid(row=1, column=0, sticky="w", pady=(14, 4))
+        ttk.Label(f, text="Installed now:").grid(row=1, column=0, sticky="w", pady=(14, 8))
         self.fw_state = ttk.Label(f, text="(connect the cable to check)")
-        self.fw_state.grid(row=1, column=1, sticky="w", pady=(14, 4))
+        self.fw_state.grid(row=1, column=1, sticky="w", pady=(14, 8))
         self.fw_install = ttk.Button(f, text="Install custom firmware",
                                      command=lambda: self.install_firmware(removing=False),
                                      style="Accent.TButton")
-        self.fw_install.grid(row=2, column=0, sticky="w", pady=6)
+        self.fw_install.grid(row=2, column=0, sticky="w", pady=10)
         self.fw_uninstall = ttk.Button(f, text="Uninstall (restore stock firmware)",
                                        command=lambda: self.install_firmware(removing=True))
-        self.fw_uninstall.grid(row=2, column=1, sticky="w", pady=6)
+        self.fw_uninstall.grid(row=2, column=1, sticky="w", pady=10)
         self.fw_hint = ttk.Label(f, text="", style="Muted.TLabel")
         self.fw_hint.grid(row=3, column=0, columnspan=2, sticky="w")
         nb.bind("<<NotebookTabChanged>>",
@@ -767,6 +765,47 @@ class App(tk.Tk):
         self.load_lighting()
         messagebox.showinfo("K580", "Done. Installed now: " + self.fw_state.cget("text"))
 
+    # the keyboard's 8 effect colours (k580.COLORS order); the last one is multi/random
+    SWATCH_RGB = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#ff00ff", "#00ffff", "#ffffff", None]
+
+    def color_swatches(self, parent, size=26, gap=6):
+        """A row of clickable colour boxes bound to self.color. Greyed out when `enabled` is False."""
+        n = len(self.SWATCH_RGB)
+        c = tk.Canvas(parent, width=n * (size + gap), height=size + 4, bg=k580_theme.PANEL,
+                      highlightthickness=0, cursor="hand2")
+        c.enabled = True
+
+        def redraw(*_):
+            c.delete("all")
+            current = self.color.get()
+            for i, rgb in enumerate(self.SWATCH_RGB):
+                x = 2 + i * (size + gap)
+                if rgb:
+                    c.create_rectangle(x, 2, x + size, 2 + size, fill=rgb, width=0)
+                else:                                   # multi/random: little rainbow
+                    for k in range(size):
+                        c.create_line(x + k, 2, x + k, 2 + size, fill=k580_theme.hue_hex(k / size, 0.9, 1.0))
+                if not c.enabled:
+                    c.create_rectangle(x, 2, x + size, 2 + size, fill=k580_theme.PANEL, stipple="gray75",
+                                       width=0)
+                selected = k580.COLORS[i] == current
+                c.create_rectangle(x - 1, 1, x + size + 1, 3 + size,
+                                   outline=k580_theme.FG if selected and c.enabled else k580_theme.BORDER,
+                                   width=2 if selected and c.enabled else 1)
+            c.config(cursor="hand2" if c.enabled else "")
+
+        def click(e):
+            i = int((e.x - 2) // (size + gap))
+            if c.enabled and 0 <= i < n and e.x - 2 - i * (size + gap) <= size:
+                self.color.set(k580.COLORS[i])
+                self.apply_lighting()
+
+        c.redraw = redraw
+        c.bind("<Button-1>", click)
+        self.color.trace_add("write", redraw)
+        redraw()
+        return c
+
     def snap_slider(self, parent, var, levels=lambda: 4, length=260):
         """A slider that moves freely while dragged and eases onto the nearest level on release.
 
@@ -908,7 +947,8 @@ class App(tk.Tk):
         speed, color = k580.effect_options(hw)
         self.speed_slider.enabled = speed
         self.speed_slider.config(cursor="hand2" if speed else "")
-        self.color_box.config(state="readonly" if color else "disabled")
+        self.color_box.enabled = color
+        self.color_box.redraw()
         name = k580.EFFECTS.get(hw, "OFF")
         note = "Changes apply instantly."
         if hw in (3, 15, 16, 17):
@@ -956,30 +996,30 @@ class App(tk.Tk):
         self.category = tk.StringVar(value="Key")
         self.action = tk.StringVar()
         keys = [f"{n}  (#{i})" for i, n in sorted(k580.KEY_NAMES.items(), key=lambda kv: kv[1])]
-        ttk.Label(f, text="Layer").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Label(f, text="Layer").grid(row=0, column=0, sticky="w", pady=8)
         lc = ttk.Combobox(f, textvariable=self.layer, values=["Normal", "Fn (while holding Fn)"],
                           state="readonly", width=30)
         lc.grid(row=0, column=1, columnspan=3, sticky="w")
         lc.bind("<<ComboboxSelected>>", lambda e: self.show_key())
-        ttk.Label(f, text="Key").grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Label(f, text="Key").grid(row=1, column=0, sticky="w", pady=8)
         kc = ttk.Combobox(f, textvariable=self.key, values=keys, state="readonly", width=30)
         kc.grid(row=1, column=1, columnspan=3, sticky="w")
         kc.bind("<<ComboboxSelected>>", lambda e: self.show_key())
-        ttk.Label(f, text="Currently").grid(row=2, column=0, sticky="w", pady=4)
+        ttk.Label(f, text="Currently").grid(row=2, column=0, sticky="w", pady=8)
         self.current = ttk.Label(f, text="-")
         self.current.grid(row=2, column=1, columnspan=3, sticky="w")
 
-        ttk.Separator(f).grid(row=3, column=0, columnspan=4, sticky="ew", pady=8)
-        ttk.Label(f, text="Type").grid(row=4, column=0, sticky="w", pady=4)
+        ttk.Separator(f).grid(row=3, column=0, columnspan=4, sticky="ew", pady=12)
+        ttk.Label(f, text="Type").grid(row=4, column=0, sticky="w", pady=8)
         cc = ttk.Combobox(f, textvariable=self.category, values=CATEGORIES, state="readonly", width=14)
         cc.grid(row=4, column=1, sticky="w")
         cc.bind("<<ComboboxSelected>>", lambda e: self.fill_actions())
-        ttk.Label(f, text="Function").grid(row=5, column=0, sticky="w", pady=4)
+        ttk.Label(f, text="Function").grid(row=5, column=0, sticky="w", pady=8)
         self.action_box = ttk.Combobox(f, textvariable=self.action, state="readonly", width=30)
         self.action_box.grid(row=5, column=1, columnspan=3, sticky="w")
-        ttk.Button(f, text="Apply", command=self.apply_key, style="Accent.TButton").grid(row=6, column=1, sticky="w", pady=6)
+        ttk.Button(f, text="Apply", command=self.apply_key, style="Accent.TButton").grid(row=6, column=1, sticky="w", pady=10)
 
-        ttk.Separator(f).grid(row=7, column=0, columnspan=4, sticky="ew", pady=8)
+        ttk.Separator(f).grid(row=7, column=0, columnspan=4, sticky="ew", pady=12)
         ttk.Label(f, text="Key combination").grid(row=8, column=0, sticky="w")
         self.combo_mods = {m: tk.BooleanVar() for m in ("LCtrl", "LShift", "LAlt", "LWin")}
         mf = ttk.Frame(f)
@@ -988,11 +1028,11 @@ class App(tk.Tk):
             ttk.Checkbutton(mf, text=m[1:], variable=var).pack(side="left", padx=(0, 6))
         self.combo_key = tk.StringVar()
         ttk.Combobox(mf, textvariable=self.combo_key, values=list(HID), state="readonly", width=8)             .pack(side="left")
-        ttk.Button(f, text="Apply combination", command=self.apply_combo, style="Accent.TButton").grid(row=9, column=1, sticky="w", pady=6)
+        ttk.Button(f, text="Apply combination", command=self.apply_combo, style="Accent.TButton").grid(row=9, column=1, sticky="w", pady=10)
 
-        ttk.Separator(f).grid(row=10, column=0, columnspan=4, sticky="ew", pady=8)
+        ttk.Separator(f).grid(row=10, column=0, columnspan=4, sticky="ew", pady=12)
         ttk.Button(f, text="Reset this key", command=self.reset_key).grid(row=11, column=1, sticky="w")
-        ttk.Label(f, text="Macros are assigned on the Macros page.", style="Muted.TLabel")             .grid(row=12, column=0, columnspan=4, sticky="w", pady=6)
+        ttk.Label(f, text="Macros are assigned on the Macros page.", style="Muted.TLabel")             .grid(row=12, column=0, columnspan=4, sticky="w", pady=10)
         self.fill_actions()
 
     def fill_actions(self):
@@ -1064,23 +1104,23 @@ class App(tk.Tk):
 
         # keyboard picture: click keys to choose where macros go
         self.mkb = KeyboardView(f, on_click=lambda i: self.refresh_macro_keys())
-        self.mkb.grid(row=0, column=0, columnspan=2, pady=(0, 4))
+        self.mkb.grid(row=0, column=0, columnspan=2, pady=(0, 8))
         self.mkey_info = ttk.Label(f, text="Click keys on the keyboard to select them.", style="Muted.TLabel")
         self.mkey_info.grid(row=1, column=0, columnspan=2, sticky="w")
 
         # left: saved macros
         left = ttk.Frame(f)
-        left.grid(row=2, column=0, sticky="nsw", padx=(0, 12), pady=6)
+        left.grid(row=2, column=0, sticky="nsw", padx=(0, 12), pady=10)
         ttk.Label(left, text="Saved macros").pack(anchor="w")
         self.mlist = tk.Listbox(left, height=7, width=22, activestyle="none", exportselection=False)
         k580_theme.style_listbox(self.mlist)
-        self.mlist.pack(anchor="w", pady=4)
+        self.mlist.pack(anchor="w", pady=8)
         self.mlist.bind("<<ListboxSelect>>", lambda e: self.show_macro())
         ttk.Button(left, text="Delete macro", command=self.delete_macro).pack(anchor="w")
 
         # right: assign + new macro
         right = ttk.Frame(f)
-        right.grid(row=2, column=1, sticky="nsew", pady=6)
+        right.grid(row=2, column=1, sticky="nsew", pady=10)
         ttk.Label(right, text="Playback").grid(row=0, column=0, sticky="w")
         pf = ttk.Frame(right)
         pf.grid(row=0, column=1, sticky="w")
@@ -1088,12 +1128,12 @@ class App(tk.Tk):
                      width=26).pack(side="left")
         ttk.Spinbox(pf, from_=2, to=255, textvariable=self.mcount, width=4).pack(side="left", padx=6)
         bf = ttk.Frame(right)
-        bf.grid(row=1, column=0, columnspan=2, sticky="w", pady=6)
+        bf.grid(row=1, column=0, columnspan=2, sticky="w", pady=10)
         ttk.Button(bf, text="Assign macro to selected keys", command=self.assign_macro,
                    style="Accent.TButton").pack(side="left")
         ttk.Button(bf, text="Clear selected keys", command=self.unassign_macro).pack(side="left", padx=6)
 
-        ttk.Separator(right).grid(row=2, column=0, columnspan=2, sticky="ew", pady=6)
+        ttk.Separator(right).grid(row=2, column=0, columnspan=2, sticky="ew", pady=10)
         ttk.Label(right, text="New macro").grid(row=3, column=0, sticky="w")
         nf = ttk.Frame(right)
         nf.grid(row=3, column=1, sticky="w")
@@ -1103,7 +1143,7 @@ class App(tk.Tk):
         ttk.Button(nf, text="Clear", command=self.clear_recording).pack(side="left")
         self.rec_view = tk.Text(right, height=3, width=44, state="disabled", wrap="word")
         k580_theme.style_text(self.rec_view)
-        self.rec_view.grid(row=4, column=0, columnspan=2, sticky="w", pady=4)
+        self.rec_view.grid(row=4, column=0, columnspan=2, sticky="w", pady=8)
         ttk.Label(right, text="...or text").grid(row=5, column=0, sticky="w")
         tf = ttk.Frame(right)
         tf.grid(row=5, column=1, sticky="w")
@@ -1284,21 +1324,21 @@ class App(tk.Tk):
         nb.add(f, text="Key colors")
         self.key_colors = {}            # matrix index -> (r, g, b)
         self.ckb = KeyboardView(f, on_click=lambda i: None)
-        self.ckb.grid(row=0, column=0, columnspan=3, pady=4)
+        self.ckb.grid(row=0, column=0, columnspan=3, pady=8)
 
         self.picker = ColorPicker(f, on_pick=self.apply_color)
-        self.picker.grid(row=1, column=0, rowspan=3, sticky="nw", pady=(6, 0))
+        self.picker.grid(row=1, column=0, rowspan=3, sticky="nw", pady=(10, 0))
 
         side = ttk.Frame(f)
-        side.grid(row=1, column=1, sticky="nw", padx=(16, 0), pady=(6, 0))
-        ttk.Button(side, text="Select all", command=lambda: self.ckb.select_all(True)).pack(fill="x", pady=2)
-        ttk.Button(side, text="Select none", command=lambda: self.ckb.select_all(False)).pack(fill="x", pady=2)
+        side.grid(row=1, column=1, sticky="nw", padx=(16, 0), pady=(10, 0))
+        ttk.Button(side, text="Select all", command=lambda: self.ckb.select_all(True)).pack(fill="x", pady=4)
+        ttk.Button(side, text="Select none", command=lambda: self.ckb.select_all(False)).pack(fill="x", pady=4)
         ttk.Button(side, text="Save to keyboard", command=self.save_colors, style="Accent.TButton") \
-            .pack(fill="x", pady=(14, 2))
+            .pack(fill="x", pady=(14, 4))
         ttk.Label(f, text="Click keys to select them, then click a colour: it's applied to the\n"
                           "selected keys right away. Save sends them to the keyboard and switches\n"
                           "the effect to Self-define. Needs the cable.",
-                  style="Muted.TLabel").grid(row=4, column=0, columnspan=3, sticky="w", pady=8)
+                  style="Muted.TLabel").grid(row=4, column=0, columnspan=3, sticky="w", pady=12)
 
     def apply_color(self, rgb):
         if not self.ckb.selected:
@@ -1353,12 +1393,12 @@ class App(tk.Tk):
 
         def line(label, widget, note=None):
             nonlocal row
-            ttk.Label(f, text=label).grid(row=row, column=0, sticky="w", pady=3, padx=(0, 16))
-            widget.grid(row=row, column=1, sticky="w", pady=3)
+            ttk.Label(f, text=label).grid(row=row, column=0, sticky="w", pady=6, padx=(0, 16))
+            widget.grid(row=row, column=1, sticky="w", pady=6)
             row += 1
             if note:
                 ttk.Label(f, text=note, style="Muted.TLabel").grid(row=row, column=0, columnspan=2,
-                                                                   sticky="w", pady=(0, 4))
+                                                                   sticky="w", pady=(0, 8))
                 row += 1
 
         section("Device")
@@ -1367,7 +1407,7 @@ class App(tk.Tk):
         row += 1
         ttk.Label(f, text="Battery: the keyboard shows it on the number keys. Press Fn + Right Shift while\n"
                           "it's in wireless mode (it doesn't report it to the PC).", style="Muted.TLabel") \
-            .grid(row=row, column=0, columnspan=2, sticky="w", pady=(2, 0))
+            .grid(row=row, column=0, columnspan=2, sticky="w", pady=(4, 0))
         row += 1
 
         section("Keyboard")
@@ -1501,10 +1541,10 @@ class App(tk.Tk):
     def build_backup(self, nb):
         f = ttk.Frame(nb, padding=12)
         nb.add(f, text="Backup")
-        ttk.Button(f, text="Save backup…", command=self.save_backup).pack(anchor="w", pady=4)
-        ttk.Button(f, text="Restore backup…", command=self.load_backup).pack(anchor="w", pady=4)
+        ttk.Button(f, text="Save backup…", command=self.save_backup).pack(anchor="w", pady=8)
+        ttk.Button(f, text="Restore backup…", command=self.load_backup).pack(anchor="w", pady=8)
         ttk.Label(f, text="Backups hold lighting, all 4 key layers and macros (incl. G-keys).",
-                  style="Muted.TLabel").pack(anchor="w", pady=8)
+                  style="Muted.TLabel").pack(anchor="w", pady=12)
 
     def save_backup(self):
         if not self.need_kb():
