@@ -192,12 +192,21 @@ class ProfilesPage:
             self.cards.append((c, outline, name))
             self.button(c, CARD_W - 52, 120, CARD_W - 16, 142, "•••", lambda: self.menu(c, name), small=True)
         else:
-            self.button(c, CARD_W - 72, 100, CARD_W - 16, 124, "Load", lambda: self.app.load_profile(name),
-                        accent=True)
-            self.button(c, CARD_W - 108, 100, CARD_W - 80, 124, "•••", lambda: self.menu(c, name), small=True)
-        c.bind("<Double-Button-1>", lambda e: self.app.load_profile(name))
-        c.bind("<Enter>", lambda e: c.itemconfigure(outline, outline=th.MUTED) if not active else None)
-        c.bind("<Leave>", lambda e: c.itemconfigure(outline, outline=th.BORDER) if not active else None)
+            # the whole card loads the profile; only the ••• button does something else
+            hint = c.create_text(CARD_W - 18, 108, anchor="e", text="Click to load", fill=th.FG,
+                                 font=("Segoe UI", 8), state="hidden")
+            self.button(c, CARD_W - 52, 120, CARD_W - 16, 142, "•••", lambda: self.menu(c, name), small=True)
+            c._cursor = "hand2"
+            c.config(cursor="hand2")
+
+            def click(e):
+                if not any(t.startswith("btn") for t in c.gettags("current")):
+                    self.app.load_profile(name)
+            c.bind("<ButtonRelease-1>", click)
+            c.bind("<Enter>", lambda e: (c.itemconfigure(outline, outline=th.MUTED),
+                                         c.itemconfigure(hint, state="normal")))
+            c.bind("<Leave>", lambda e: (c.itemconfigure(outline, outline=th.BORDER),
+                                         c.itemconfigure(hint, state="hidden")))
         c.bind("<Button-3>", lambda e: self.menu(c, name, e))
 
     def new_card(self, c):
@@ -219,7 +228,8 @@ class ProfilesPage:
         if accent:
             self.accent_items = getattr(self, "accent_items", []) + [(c, bg)]
         c.tag_bind(tag, "<Enter>", lambda e: (c.itemconfigure(bg, fill=th.BORDER), c.config(cursor="hand2")))
-        c.tag_bind(tag, "<Leave>", lambda e: (c.itemconfigure(bg, fill=th.FIELD_HI), c.config(cursor="")))
+        c.tag_bind(tag, "<Leave>", lambda e: (c.itemconfigure(bg, fill=th.FIELD_HI),
+                                              c.config(cursor=getattr(c, "_cursor", ""))))
         c.tag_bind(tag, "<ButtonRelease-1>", lambda e: command())
 
     def menu(self, c, name, e=None):
