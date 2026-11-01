@@ -2211,7 +2211,7 @@ class App(tk.Tk):
             table = bytearray(k580.SIZES[k580.OP_RGB_TABLE])
             for i in range(k580.RGB_TABLE_EFFECTS + 2):
                 table[i * 21:i * 21 + 21] = k580.DEFAULT_PALETTE
-            data = {"name": "Default", "saved": time.strftime("%Y-%m-%d %H:%M",
+            data = {"name": "Default", "locked": True, "saved": time.strftime("%Y-%m-%d %H:%M",
                                                               time.localtime(os.path.getmtime(first))),
                     "led": self.default_led(snap["led"]), "matrix": snap["matrix"],
                     "macro_area": (bytes.fromhex(snap["macros"]).ljust(MACRO_AREA, b"\0")).hex(),
@@ -2273,8 +2273,16 @@ class App(tk.Tk):
         self.set_active_profile(name)
         self.refresh_profiles()
 
+    def profile_locked(self, name):
+        """The built-in Default profile can be loaded but not changed, renamed or deleted."""
+        try:
+            with open(self.profiles[name]) as fh:
+                return bool(json.load(fh).get("locked"))
+        except (OSError, ValueError, KeyError):
+            return False
+
     def update_profile(self, name):
-        if not self.need_kb():
+        if self.profile_locked(name) or not self.need_kb():
             return
         if not messagebox.askyesno("K580", f"Replace profile {name} with the keyboard's current setup?"):
             return
@@ -2337,6 +2345,8 @@ class App(tk.Tk):
         self.after(50, done)
 
     def rename_profile(self, name, new):
+        if self.profile_locked(name):
+            return
         path = self.profiles[name]
         with open(path) as fh:
             data = json.load(fh)
@@ -2348,7 +2358,7 @@ class App(tk.Tk):
         self.refresh_profiles()
 
     def delete_profile(self, name):
-        if not messagebox.askyesno("K580", f"Delete profile {name}? The keyboard keeps its current setup."):
+        if self.profile_locked(name) or not messagebox.askyesno("K580", f"Delete profile {name}? The keyboard keeps its current setup."):
             return
         os.remove(self.profiles[name])
         if self.prefs.get("profile") == name:

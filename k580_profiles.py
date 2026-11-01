@@ -180,7 +180,8 @@ class ProfilesPage:
         try:
             look = Look(data, self.app.side_mode_names())
             kb.show(look.fills(1.7, kb.centers))
-            meta = f"{look.effect}  ·  {short_date(data.get('saved', ''))}"
+            meta = f"{look.effect}  ·  " + ("Built in" if data.get("locked") else
+                                              short_date(data.get("saved", "")))
         except (KeyError, ValueError, IndexError):
             meta = "Can't read this profile"
         c.create_text(16, 108, anchor="w", text=name, font=("Segoe UI Semibold", 11), fill=th.FG,
@@ -195,7 +196,7 @@ class ProfilesPage:
                  ("", "Rename", lambda: self.open_form("rename", name), False),
                  ("", "Delete", lambda: self.app.delete_profile(name), True))
         x = CARD_W - 16 - 3 * 30 - 2 * 6
-        for glyph, tip, command, danger in icons:
+        for glyph, tip, command, danger in () if data.get("locked") else icons:   # Default: read-only
             self.icon_button(c, x, 118, x + 30, 144, glyph, tip, command, hint, rest, danger)
             x += 36
         if active:
@@ -213,7 +214,8 @@ class ProfilesPage:
                                          c.itemconfigure(hint, state="normal")))
             c.bind("<Leave>", lambda e: (c.itemconfigure(outline, outline=th.BORDER),
                                          c.itemconfigure(hint, state="hidden")))
-        c.bind("<Button-3>", lambda e: self.menu(c, name, e))
+        if not data.get("locked"):
+            c.bind("<Button-3>", lambda e: self.menu(c, name, e))
 
     def new_card(self, c):
         outline = rounded(c, 1, 1, CARD_W - 1, CARD_H - 1, 14, fill=th.PANEL, outline=th.BORDER, width=1,
