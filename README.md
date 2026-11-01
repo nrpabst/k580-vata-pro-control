@@ -28,11 +28,13 @@ Unofficial. Not affiliated with or endorsed by Redragon. Use at your own risk.
 
 ## Download
 
-Get **K580 Control.exe** from the [latest release](https://github.com/nrpabst/k580-vata-pro-control/releases/latest)
-and double-click it. It's a single file with everything inside; nothing to install. Windows may warn
-about an unknown publisher the first time (the app isn't code-signed): choose **More info → Run anyway**.
+Get the installer (**K580-Control-Setup-*version*.exe**) from the [latest release](https://github.com/nrpabst/k580-vata-pro-control/releases/latest)
+and run it. It installs for your Windows user (no admin needed), adds K580 Control to the Start menu,
+and by default starts it with Windows in the system tray. Uninstall it from Windows' Apps list.
+Windows may warn about an unknown publisher the first time (the installer isn't code-signed): choose
+**More info → Run anyway**.
 
-Your settings, profiles and backups are kept in `%APPDATA%\K580 Control`.
+Your settings, profiles and backups are kept in `%APPDATA%\K580 Control` (uninstalling leaves them).
 
 Needs Windows and a K580 VATA PRO. Wired mode is its USB ID `258A:010C`; the 2.4G dongle is `3554:FA09`.
 
@@ -43,8 +45,9 @@ uses only Tkinter and the Windows HID API): download the repository (green **Cod
 **Download ZIP**, or `git clone`), then double-click `K580 Control.bat`, or run `pythonw app\k580_app.py`.
 Settings, profiles and backups then live in the repository folder.
 
-To build the .exe yourself: `pip install pyinstaller`, then `python tools\build_exe.py`
-(output in `dist\`).
+To build the .exe and the installer yourself: `pip install pyinstaller`, install
+[Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`), then run
+`python tools\build_exe.py` (output in `dist\`).
 
 Lighting works over the cable or the dongle. Keys, Macros, Key colors and Firmware need the
 **cable with the keyboard's wireless switch off**.
@@ -105,6 +108,7 @@ python k580.py live 5 0=ff0000       # light Esc red for 5 seconds (live mode)
 | `app/k580_theme.py` | Dark theme and RGB header |
 | `app/k580_tray.py` | System-tray icon (Win32, no extra packages) |
 | `app/k580_resize.py` | Smooth window resizing on Windows |
-| `tools/build_exe.py` | Builds the single-file `K580 Control.exe` (PyInstaller) |
+| `tools/build_exe.py` | Builds `K580 Control.exe` (PyInstaller) and the installer |
+| `tools/installer.iss` | The installer definition (Inno Setup) |
 | `tools/effects_asm.py` | Builds the custom firmware's extra effects (8051 code) |
 | `third_party/sinowisp/` | Bundled flasher (sinowisp v2.1.0, MIT) used by the Firmware page |
