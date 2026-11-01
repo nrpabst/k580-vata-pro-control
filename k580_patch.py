@@ -50,6 +50,12 @@ PATCH = [
              "e50a" "b4ff04" "9001c8" "e0" "9003bb" "f0" "9003b0" "02421f"),
     # 0F92: MOV A,0x0A ; CJNE A,#0xFF,store ; MOV DPTR,#0x1C8 ; MOVX A,@DPTR
     # 0F9A: store: MOV DPTR,#0x3BB ; MOVX @DPTR,A ; MOV DPTR,#0x3B0 ; LJMP 0x421F
+    # That routine only runs on the cable, so the battery check itself (0x7EEF, called from the main
+    # loop at 0x124A in every mode) also copies the value right after measuring.
+    (0x124A, "127eef", "120fb4"),                   # LCALL 0x0FB4 instead of LCALL 0x7EEF
+    (0x0FB4, "900d0f74168009efb4650d900d0f7407f0",
+             "127eef" "e50a" "b4ff04" "9001c8" "e0" "9003bb" "f0" "22"),
+    # 0FB4: LCALL 0x7EEF (measure) ; same copy as above ; RET
 ]
 # Optional: switch to the cable whenever it's plugged in. The mode switch on the keyboard is read at
 # 0x84AB (pins P5.5 / P3.1, 10 samples each): 2.4G, Bluetooth or cable (XRAM 0x3AD = 1 / 2 / 0).
@@ -67,7 +73,7 @@ AUTO_WIRED_SITE = (0x84AB, bytes.fromhex("020fa5"))
 BATTERY_BYTE = 0x1C               # lighting-block byte: battery % (0-100). Not measured on the cable (reads 0)
 # bytes that only the latest custom build has (fn 0x13 light toggle, battery copy)
 LATEST_SITES = [(0x37D3, bytes.fromhex("020f7c")), (0x421C, bytes.fromhex("020f92")),
-                (0x0F94, bytes.fromhex("b4ff04"))]
+                (0x0F94, bytes.fromhex("b4ff04")), (0x124A, bytes.fromhex("120fb4"))]
 MEDIA_TOGGLE_KEY = "07000000"     # stock key function 0x00: toggle lighting byte 0x11
 WHEEL_TOGGLE_KEY = "07000013"     # patched key function 0x13: toggle lighting byte 0x30
 # A short-lived test build also changed brightness to 0-20 (5% steps) by replacing the level
