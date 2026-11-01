@@ -23,7 +23,7 @@ import k580_resize  # noqa: E402
 import k580_tray  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-APP_VERSION = "0.2.0"
+APP_VERSION = "1.0.0"
 UPDATE_URL = "https://api.github.com/repos/nrpabst/k580-vata-pro-control/releases/latest"
 RELEASES_PAGE = "https://github.com/nrpabst/k580-vata-pro-control/releases"
 PREFS_PATH = os.path.join(HERE, "settings.json")
@@ -912,7 +912,8 @@ class App(tk.Tk):
         "The custom firmware lets you keep the media-key and volume-key lights on all the\n"
         "time, instead of them only flashing when pressed. You turn them on or off on the\n"
         "Lighting page or with Fn + Play/Pause and Fn + the volume/brightness key. It also lets\n"
-        "the app show your battery level.\n\n"
+        "the app show your battery level, adds three lighting effects (Rainbow wheel, Colorful\n"
+        "waterfall, Rotating storm) and a Match mode for the side lights.\n\n"
         "Installing takes about 15 seconds. Plug in the cable and switch wireless off first.\n"
         "Your settings are kept, and Uninstall puts the original firmware back.")
 
