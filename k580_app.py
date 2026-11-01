@@ -700,7 +700,7 @@ class App(tk.Tk):
         self.lkb_centers = self.lkb.centers()
         f.columnconfigure(0, minsize=120)
         f.columnconfigure(1, weight=1)
-        names = k580.effect_names()          # widened once the custom firmware is seen
+        names = k580.effect_names(os.path.exists(self.EFFECTS_MARKER))   # updated once the firmware is read
         self.effect = tk.StringVar()
         self.bright = tk.DoubleVar()
         self.speed = tk.DoubleVar()
@@ -865,6 +865,7 @@ class App(tk.Tk):
     MEDIA_BYTE = 0x11
     WHEEL_BYTE = 0x30   # custom firmware: non-zero keeps the volume/brightness key lit
     MARKER = os.path.join(HERE, "firmware", "installed-switch-firmware.txt")
+    EFFECTS_MARKER = os.path.join(HERE, "firmware", "installed-effects.txt")
 
     def firmware_variant(self):
         """Which firmware the cabled keyboard runs (cached per connection)."""
@@ -906,7 +907,17 @@ class App(tk.Tk):
             v = self.marker_variant() or "unknown"
         if v == "switch" and self.kb:
             self.ensure_fn_toggles()
-        has_effects = getattr(self, "_has_effects", False) if self.kb else v == "switch"
+        # once the extra effects have been seen on this keyboard, keep listing them (a reconnect or a
+        # failed flash read mid-way shouldn't make them vanish); the marker file remembers them too
+        has_effects = ((getattr(self, "_has_effects", False) if self.kb else False) or v == "switch"
+                       or getattr(self, "_effects_seen", False) or os.path.exists(self.EFFECTS_MARKER))
+        if has_effects and self.kb and v.startswith("switch"):
+            self._effects_seen = True
+            with open(self.EFFECTS_MARKER, "w") as fh:
+                fh.write("effects\n")
+        if v == "stock" and os.path.exists(self.EFFECTS_MARKER):
+            os.remove(self.EFFECTS_MARKER)
+            self._effects_seen = has_effects = False
         self.effect_combo.config(values=k580.effect_names(has_effects))
         led = self.led or self.get_led()
         auto = self.kb and getattr(self, "_auto_installed", False)
