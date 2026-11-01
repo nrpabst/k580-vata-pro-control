@@ -23,7 +23,8 @@ OURS = (0x06, 0x10, 0x12)            # Rainbow wheel, Colorful waterfall, Rotati
 COLS, ROWS = 21, 6
 DARK_KEYS = {6, 23, 29, 41, 47}      # G1-G5 (matrix index = col * 6 + row): stock effects leave them dark
 OFF = 0xFF                           # table value: draw this key black
-SKIP_KEYS = {77, 88, 113, 125}       # volume/brightness key + media keys: their own lights, leave alone
+SKIP_KEYS = {77, 88, 113, 125,       # volume/brightness key + media keys: their own lights, leave alone
+             102, 108, 114, 120}   # status lights above the numpad (Caps Lock etc.)
 SKIP = 0xFE                          # table value: don't touch this key
 
 
