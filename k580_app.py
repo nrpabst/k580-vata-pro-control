@@ -1418,14 +1418,15 @@ class App(tk.Tk):
         recolour()
         return c
 
-    def load_lighting(self):
-        led = bytearray(self.get_led())
+    def load_lighting(self, led=None, palette=None):
+        """Show the keyboard's lighting (read now, or `led`/`palette` already read elsewhere)."""
+        led = bytearray(self.get_led() if led is None else led)
         if len(led) < 0x80:                    # no answer (e.g. the keyboard is off behind the dongle)
             self.battery.config(text="")
             return
         self.led = led
         if self.kb:
-            self.palette = bytearray(self.kb.get_rgb_table())
+            self.palette = bytearray(self.kb.get_rgb_table() if palette is None else palette)
         self.refresh_media_state()
         self.show_lighting()
         self.load_settings()
@@ -1911,10 +1912,11 @@ class App(tk.Tk):
                   style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w")
 
 
-    def load_macros(self):
+    def load_macros(self, area=None):
         if not self.kb:
             return
-        area = self.kb.read(0x80 | k580.OP_MACRO, G_SLOTS_AT + G_SLOT_COUNT * G_SLOT)   # app macros, G slots
+        if area is None:
+            area = self.kb.read(0x80 | k580.OP_MACRO, MACRO_AREA)      # app macros, G slots
         self.macros = [(n, [b[i:i + 4] for i in range(0, len(b), 4)]) for n, b in parse_macros(area[:1024])]
         # G1-G5 recordings made on the keyboard itself: shown when a G key is clicked
         self.g_recordings = {}
@@ -2132,10 +2134,10 @@ class App(tk.Tk):
             self.after_cancel(self._keys_job)
         self._keys_job = self.after(500, self.save_colors)
 
-    def load_colors(self):
+    def load_colors(self, planes=None):
         if not self.kb:
             return
-        planes = self.kb.get_color_group(0)
+        planes = self.kb.get_color_group(0) if planes is None else planes
         n = k580.MATRIX_KEYS
         for idx in self.ckb.rects:
             self.key_colors[idx] = (planes[idx], planes[n + idx], planes[2 * n + idx])
@@ -2279,12 +2281,42 @@ class App(tk.Tk):
         self.refresh_profiles()
 
     def load_profile(self, name):
-        if not self.need_kb():
+        """Send a profile to the keyboard on a worker thread (about 2 s of writes and reads), so the
+        page switches to it at once and the window stays responsive meanwhile."""
+        if not self.need_kb() or getattr(self, "_profile_job", None):
             return
         with open(self.profiles[name]) as fh:
             data = json.load(fh)
+        self._profile_job = name
+        self.set_active_profile(name)
+        self.refresh_profiles()
+        self.ppage.loading(True)
+        result = {}
 
         def work():
+            try:
+                send()
+                kb = self.kb
+                result.update(led=kb.get_led(), palette=kb.get_rgb_table(), planes=kb.get_color_group(0),
+                              area=kb.read(0x80 | k580.OP_MACRO, MACRO_AREA))
+            except Exception as e:                   # e.g. the cable came out half way
+                result["error"] = e
+            result["done"] = True
+
+        def done():                                  # checked from the UI thread (Tk isn't thread-safe)
+            if "done" not in result:
+                self.after(50, done)
+                return
+            self._profile_job = None
+            self.ppage.loading(False)
+            if "error" in result:
+                messagebox.showerror("K580", f"Couldn't finish loading {name}: {result['error']}")
+                return
+            self.load_lighting(result["led"], result["palette"])
+            self.load_colors(result["planes"])
+            self.load_macros(result["area"])
+
+        def send():
             self.set_led(bytes.fromhex(data["led"]))
             time.sleep(0.1)
             for layer, hx in enumerate(data["matrix"]):
@@ -2298,12 +2330,9 @@ class App(tk.Tk):
             time.sleep(0.1)
             self.kb.write(k580.OP_COLOR_GROUP, bytes.fromhex(data["key_colors"]), sub=0)
             time.sleep(0.2)
-        self.busy(work)
-        self.set_active_profile(name)
-        self.refresh_profiles()
-        self.load_lighting()
-        self.load_colors()
-        self.load_macros()
+
+        threading.Thread(target=work, daemon=True).start()
+        self.after(50, done)
 
     def rename_profile(self, name, new):
         path = self.profiles[name]

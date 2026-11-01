@@ -244,6 +244,12 @@ class ProfilesPage:
         x, y = (e.x_root, e.y_root) if e else (c.winfo_rootx() + CARD_W - 108, c.winfo_rooty() + 126)
         m.tk_popup(x, y)
 
+    def loading(self, on):
+        """While a profile is being sent to the keyboard, the top panel says so."""
+        if getattr(self, "hero_tag", None):
+            self.hero.itemconfigure(self.hero_tag, text="LOADING PROFILE…" if on else "ACTIVE PROFILE")
+        self.f.config(cursor="watch" if on else "")
+
     # ---------- name form
     def open_form(self, mode, name=None):
         self.form_mode, self.form_name = mode, name
