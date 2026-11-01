@@ -535,7 +535,8 @@ class App(tk.Tk):
     FIRMWARE_NOTE = (
         "The custom firmware lets you keep the media-key and volume-key lights on all the\n"
         "time, instead of them only flashing when pressed. You turn them on or off on the\n"
-        "Lighting page.\n\n"
+        "Lighting page or with Fn + Play/Pause and Fn + the volume/brightness key. It also lets\n"
+        "the app show your battery level.\n\n"
         "Installing takes about a minute. Plug in the cable and switch wireless off first.\n"
         "Your settings are kept, and Uninstall puts the original firmware back.")
 
