@@ -23,7 +23,7 @@ import k580_resize  # noqa: E402
 import k580_tray  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-APP_VERSION = "1.0.0"
+APP_VERSION = "0.3.0"
 UPDATE_URL = "https://api.github.com/repos/nrpabst/k580-vata-pro-control/releases/latest"
 RELEASES_PAGE = "https://github.com/nrpabst/k580-vata-pro-control/releases"
 PREFS_PATH = os.path.join(HERE, "settings.json")
