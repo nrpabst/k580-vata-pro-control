@@ -40,8 +40,17 @@ PATCH = [
     # 0F7C: JB 0x25,ret ; JB 0x2D,ret          (same guards as the other key functions)
     # 0F82: MOV DPTR,#0x3CF ; toggle 0 <-> 1 ; LJMP 0x3801 (fn 0x00's tail: save + feedback flash)
     # 0F91: ret: RET
+
+    # Battery: the routine at 0x421C (runs every few ticks) first copies the smoothed battery %
+    # (IRAM 0x0A, 0xFF until measured) into lighting byte 0x1C (XRAM 0x3BB, unused by stock), so the
+    # app can read it with a normal lighting read, by cable or through the 2.4G dongle.
+    (0x421C, "9003b0", "020f92"),                   # LJMP 0x0F92 instead of MOV DPTR,#0x3B0
+    (0x0F92, "07900d0f744f802aefb45e07", "e50a" "9003bb" "f0" "9003b0" "02421f"),
+    # 0F92: MOV A,0x0A ; MOV DPTR,#0x3BB ; MOVX @DPTR,A ; MOV DPTR,#0x3B0 ; LJMP 0x421F
 ]
-FN_TOGGLE_SITE = (0x37D3, bytes.fromhex("020f7c"))
+BATTERY_BYTE = 0x1C               # lighting-block byte: battery % (0-100, 0xFF = not measured yet)
+# bytes that only the latest custom build has (fn 0x13 light toggle, battery copy)
+LATEST_SITES = [(0x37D3, bytes.fromhex("020f7c")), (0x421C, bytes.fromhex("020f92"))]
 MEDIA_TOGGLE_KEY = "07000000"     # stock key function 0x00: toggle lighting byte 0x11
 WHEEL_TOGGLE_KEY = "07000013"     # patched key function 0x13: toggle lighting byte 0x30
 # A short-lived test build also changed brightness to 0-20 (5% steps) by replacing the level

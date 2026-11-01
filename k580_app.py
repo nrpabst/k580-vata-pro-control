@@ -375,6 +375,8 @@ class App(tk.Tk):
         top.pack(fill="x")
         self.status = ttk.Label(top, text="Not connected", style="Header.TLabel")
         self.status.pack(side="left")
+        self.battery = ttk.Label(top, text="", style="Header.TLabel")
+        self.battery.pack(side="left", padx=(16, 0))
         ttk.Button(top, text="Reconnect", command=self.connect).pack(side="right")
 
         nb = ttk.Notebook(self)
@@ -579,8 +581,8 @@ class App(tk.Tk):
             addr, code = k580_patch.FINE_BRIGHTNESS_SITE
             if flash(addr, len(code)) == code:
                 return "switch-fine"
-            addr, code = k580_patch.FN_TOGGLE_SITE
-            return "switch" if flash(addr, len(code)) == code else "switch-nofn"
+            latest = all(flash(a, len(c)) == c for a, c in k580_patch.LATEST_SITES)
+            return "switch" if latest else "switch-nofn"
         if site == b"\x20\x6e":
             return "toggle"
         if flash(0x2AFE, 1)[0] == 0x80:
@@ -602,7 +604,7 @@ class App(tk.Tk):
         led = self.led or self.get_led()
         self.fw_state.config(text={"switch": "Custom firmware",
                                    "switch-fine": "Custom (test version with 20 brightness steps)",
-                                   "switch-nofn": "Custom (older version, no Fn light toggles)",
+                                   "switch-nofn": "Custom (older version)",
                                    "switch-old": "Custom (older version, no volume-key option)",
                                    "always": "Custom (older 'always on' version)",
                                    "toggle": "Custom (older toggle version)",
@@ -947,7 +949,15 @@ class App(tk.Tk):
         self.show_lighting()
         self.load_settings()
 
+    def show_battery(self, led):
+        """Latest custom firmware copies the battery % into a lighting byte."""
+        import k580_patch
+        v = self.firmware_variant() if self.kb else self.marker_variant()
+        pct = led[k580_patch.BATTERY_BYTE]
+        self.battery.config(text=f"Battery {pct}%" if v == "switch" and pct <= 100 else "")
+
     def show_lighting(self):
+        self.show_battery(self.led)
         hw = self.led[10]
         self.effect.set(k580.EFFECTS.get(hw, "OFF"))
         self.show_effect_options(hw)
@@ -962,6 +972,12 @@ class App(tk.Tk):
         """Pick up changes made on the keyboard itself (Fn effect/brightness/speed/color keys)
         while the Lighting page is showing."""
         self.after(1000, self.poll_lighting)
+        self._poll_n = getattr(self, "_poll_n", 0) + 1
+        if self._poll_n % 30 == 0 and self.state() == "normal" and (self.kb or self.wl):
+            try:                                # battery, every 30 s on any page
+                self.show_battery(self.get_led())
+            except Exception:
+                pass
         if (self.state() != "normal" or self.slider_busy or not (self.kb or self.wl)
                 or self.nb.tab(self.nb.select(), "text") != "Lighting"):
             return
