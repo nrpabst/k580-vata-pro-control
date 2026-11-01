@@ -1701,37 +1701,21 @@ class App(tk.Tk):
         ttk.Entry(tf, textvariable=self.mtext, width=22).pack(side="left")
         ttk.Button(tf, text="Save macro", command=self.save_macro, style="Accent.TButton") \
             .pack(side="left", padx=6)
-        ttk.Label(f, text="Keys with a macro are outlined in the accent colour. G1-G5 recordings aren't touched.",
+        ttk.Label(f, text="Outlined keys have a macro. Click a G key to see what it's recorded to type.",
                   style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w")
 
-        # G1-G5: macros recorded on the keyboard itself (Fn + G-key), read-only here
-        gk = ttk.Frame(f)
-        gk.grid(row=4, column=0, columnspan=2, sticky="w", pady=(14, 0))
-        ttk.Label(gk, text="G-key recordings", font=k580_theme.FONT_BOLD).grid(row=0, column=0, columnspan=2,
-                                                                               sticky="w")
-        self.g_labels = []
-        for n in range(5):
-            row = ttk.Frame(gk)
-            row.grid(row=n + 1, column=0, columnspan=2, sticky="w", pady=1)
-            ttk.Label(row, text=f"G{n + 1}", width=4).pack(side="left")
-            lab = ttk.Label(row, text="-", style="Muted.TLabel")
-            lab.pack(side="left")
-            self.g_labels.append(lab)
-        ttk.Label(gk, text="Recorded on the keyboard itself. See the keyboard's manual for how to record them.",
-                  style="Muted.TLabel").grid(row=6, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
     def load_macros(self):
         if not self.kb:
             return
         area = self.kb.read(0x80 | k580.OP_MACRO, 1024 + 5 * 0x80)     # app macros, then G1-G5 slots
         self.macros = [(n, [b[i:i + 4] for i in range(0, len(b), 4)]) for n, b in parse_macros(area[:1024])]
-        for n, lab in enumerate(self.g_labels):
+        # G1-G5 recordings made on the keyboard itself: shown when a G key is clicked
+        self.g_recordings = {}
+        for n, idx in enumerate(self.G_KEYS):
             keys = parse_g_slot(area[1024 + n * 0x80:1024 + (n + 1) * 0x80])
-            if keys is None:
-                lab.config(text="(empty)")
-            else:
-                text = "  ".join(keys) or "(no keys)"
-                lab.config(text=text if len(text) <= 70 else text[:67] + "…")
+            if keys is not None:
+                self.g_recordings[idx] = "  ".join(keys) or "(no keys)"
         self.mlist.delete(0, "end")
         for i, (n, ev) in enumerate(self.macros):
             self.mlist.insert("end", f"{i + 1}. {n}  ({len(ev)} steps)")
@@ -1742,11 +1726,14 @@ class App(tk.Tk):
         m = self.kb.get_matrix(0)
         return {i: m[i * 4 + 3] for i in range(k580.MATRIX_KEYS) if m[i * 4] == 0x03}
 
+    G_KEYS = (6, 23, 29, 41, 47)        # G1-G5 matrix indexes, in recording-slot order
+
     def refresh_macro_keys(self):
         if not self.kb:
             return
         binds = self._bindings()
-        self.mkb.set_marked(set(binds))
+        recorded = getattr(self, "g_recordings", {})
+        self.mkb.set_marked(set(binds) | set(recorded))
         sel = sorted(self.mkb.selected)
         if not sel:
             self.mkey_info.config(text="Click keys on the keyboard to select them.")
@@ -1755,7 +1742,12 @@ class App(tk.Tk):
         for i in sel:
             name = k580.KEY_NAMES.get(i, f"#{i}")
             j = binds.get(i)
-            parts.append(f"{name} → {self.macros[j][0]}" if j is not None and j < len(self.macros) else name)
+            if i in recorded:
+                parts.append(f"{name}: types {recorded[i]}")
+            elif i in self.G_KEYS:
+                parts.append(f"{name}: no recording")
+            else:
+                parts.append(f"{name} → {self.macros[j][0]}" if j is not None and j < len(self.macros) else name)
         self.mkey_info.config(text="Selected: " + ", ".join(parts))
 
     def show_macro(self):
