@@ -51,6 +51,19 @@ PATCH = [
     # 0F92: MOV A,0x0A ; CJNE A,#0xFF,store ; MOV DPTR,#0x1C8 ; MOVX A,@DPTR
     # 0F9A: store: MOV DPTR,#0x3BB ; MOVX @DPTR,A ; MOV DPTR,#0x3B0 ; LJMP 0x421F
 ]
+# Optional: switch to the cable whenever it's plugged in. The mode switch on the keyboard is read at
+# 0x84AB (pins P5.5 / P3.1, 10 samples each): 2.4G, Bluetooth or cable (XRAM 0x3AD = 1 / 2 / 0).
+# Bit 0x48 is set while the cable powers the keyboard (P3.4, debounced at 0x9EBE; it also drives the
+# battery's charging logic). With this patch the cable branch wins while bit 0x48 is set, and the
+# switch position takes over again when the cable is unplugged.
+AUTO_WIRED_PATCH = [
+    (0x84AB, "20fd12", "020fa5"),                   # LJMP 0x0FA5 instead of JB 0xFD,0x84C0
+    (0x0FA5, "efb45907900d0f74048014efb45f07",
+             "204806" "20fd06" "0284ae" "0284d4" "0284c0"),
+    # 0FA5: JB 0x48,cable ; JB 0xFD,rest ; LJMP 0x84AE (2.4G position)
+    # 0FAE: cable: LJMP 0x84D4        0FB1: rest: LJMP 0x84C0 (Bluetooth or cable position)
+]
+AUTO_WIRED_SITE = (0x84AB, bytes.fromhex("020fa5"))
 BATTERY_BYTE = 0x1C               # lighting-block byte: battery % (0-100). Not measured on the cable (reads 0)
 # bytes that only the latest custom build has (fn 0x13 light toggle, battery copy)
 LATEST_SITES = [(0x37D3, bytes.fromhex("020f7c")), (0x421C, bytes.fromhex("020f92")),
@@ -108,9 +121,9 @@ def state(data):
     return "unknown"
 
 
-def apply(data):
+def apply(data, auto_wired=False):
     out = bytearray(data)
-    for addr, old, new in PATCH:
+    for addr, old, new in PATCH + (AUTO_WIRED_PATCH if auto_wired else []):
         o, n = bytes.fromhex(old), bytes.fromhex(new)
         if out[addr:addr + len(o)] != o:
             raise ValueError(f"unexpected bytes at 0x{addr:04X}")

@@ -546,15 +546,23 @@ class App(tk.Tk):
         ttk.Label(f, text="Installed now:").grid(row=1, column=0, sticky="w", pady=(14, 8))
         self.fw_state = ttk.Label(f, text="(connect the cable to check)")
         self.fw_state.grid(row=1, column=1, sticky="w", pady=(14, 8))
+        self.auto_wired = tk.BooleanVar(value=False)
+        self.fw_auto = ttk.Checkbutton(f, text="Switch to the cable automatically when it's plugged in",
+                                       variable=self.auto_wired)
+        self.fw_auto.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ttk.Label(f, text="Off: plugging in only charges, and the keyboard stays on 2.4G or Bluetooth\n"
+                          "(like stock). On: plugging in uses the cable, whatever the switch says.\n"
+                          "Pick this before installing; to change it later, Uninstall and Install again.",
+                  style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 4))
         self.fw_install = ttk.Button(f, text="Install custom firmware",
                                      command=lambda: self.install_firmware(removing=False),
                                      style="Accent.TButton")
-        self.fw_install.grid(row=2, column=0, sticky="w", pady=10)
+        self.fw_install.grid(row=4, column=0, sticky="w", pady=10)
         self.fw_uninstall = ttk.Button(f, text="Uninstall (restore stock firmware)",
                                        command=lambda: self.install_firmware(removing=True))
-        self.fw_uninstall.grid(row=2, column=1, sticky="w", pady=10)
+        self.fw_uninstall.grid(row=4, column=1, sticky="w", pady=10)
         self.fw_hint = ttk.Label(f, text="", style="Muted.TLabel")
-        self.fw_hint.grid(row=3, column=0, columnspan=2, sticky="w")
+        self.fw_hint.grid(row=5, column=0, columnspan=2, sticky="w")
         nb.bind("<<NotebookTabChanged>>",
                 lambda e: self.refresh_media_state() if nb.tab(nb.select(), "text") == "Firmware" else None)
 
@@ -582,6 +590,8 @@ class App(tk.Tk):
             if flash(addr, len(code)) == code:
                 return "switch-fine"
             latest = all(flash(a, len(c)) == c for a, c in k580_patch.LATEST_SITES)
+            addr, code = k580_patch.AUTO_WIRED_SITE
+            self._auto_installed = flash(addr, len(code)) == code
             return "switch" if latest else "switch-nofn"
         if site == b"\x20\x6e":
             return "toggle"
@@ -602,7 +612,9 @@ class App(tk.Tk):
         if v == "switch" and self.kb:
             self.ensure_fn_toggles()
         led = self.led or self.get_led()
-        self.fw_state.config(text={"switch": "Custom firmware",
+        auto = self.kb and getattr(self, "_auto_installed", False)
+        self.fw_state.config(text={"switch": "Custom firmware" + (" (switches to the cable when plugged in)"
+                                                                  if auto else ""),
                                    "switch-fine": "Custom (test version with 20 brightness steps)",
                                    "switch-nofn": "Custom (older version)",
                                    "switch-old": "Custom (older version, no volume-key option)",
@@ -631,6 +643,7 @@ class App(tk.Tk):
             "unknown": "Connect the cable once so the app can check your firmware."}[v])
         # one action at a time: stock -> only Install, any custom -> only Uninstall
         self.fw_install.config(state="normal" if v == "stock" else "disabled")
+        self.fw_auto.config(state="normal" if v == "stock" else "disabled")
         self.fw_uninstall.config(state="normal" if v not in ("stock", "unknown") else "disabled")
         self.fw_hint.config(text={
             "stock": "", "switch": "",
@@ -766,7 +779,7 @@ class App(tk.Tk):
                         self.kb.close()
                         self.kb = None
                 patched = os.path.join(HERE, "backups", "patched-firmware.hex")
-                k580_patch.write_hex(k580_patch.apply(fw), patched)
+                k580_patch.write_hex(k580_patch.apply(fw, auto_wired=self.auto_wired.get()), patched)
                 k580_patch.write_keyboard(tool, patched)
         except RuntimeError as e:
             self.kb = self.wait_for_keyboard()
