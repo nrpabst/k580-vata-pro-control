@@ -577,7 +577,10 @@ class App(tk.Tk):
             if flash(0x2AD8, 3) != b"\x02\x0f\x6a":
                 return "switch-old"
             addr, code = k580_patch.FINE_BRIGHTNESS_SITE
-            return "switch-fine" if flash(addr, len(code)) == code else "switch"
+            if flash(addr, len(code)) == code:
+                return "switch-fine"
+            addr, code = k580_patch.FN_TOGGLE_SITE
+            return "switch" if flash(addr, len(code)) == code else "switch-nofn"
         if site == b"\x20\x6e":
             return "toggle"
         if flash(0x2AFE, 1)[0] == 0x80:
@@ -594,22 +597,28 @@ class App(tk.Tk):
                 os.remove(self.MARKER)
         else:
             v = self.marker_variant() or "unknown"
+        if v == "switch" and self.kb:
+            self.ensure_fn_toggles()
         led = self.led or self.get_led()
         self.fw_state.config(text={"switch": "Custom firmware",
                                    "switch-fine": "Custom (test version with 20 brightness steps)",
+                                   "switch-nofn": "Custom (older version, no Fn light toggles)",
                                    "switch-old": "Custom (older version, no volume-key option)",
                                    "always": "Custom (older 'always on' version)",
                                    "toggle": "Custom (older toggle version)",
                                    "stock": "Stock Redragon firmware",
                                    "unknown": "(connect the cable to check)"}[v])
-        switch, wheel = v.startswith("switch"), v in ("switch", "switch-fine")
+        switch, wheel = v.startswith("switch"), v in ("switch", "switch-fine", "switch-nofn")
         self.media_on.set(led[self.MEDIA_BYTE] == 0 if switch else v == "always")
         self.media_toggle.config(state="normal" if switch else "disabled")
         self.wheel_on.set(wheel and led[self.WHEEL_BYTE] != 0)
         self.wheel_toggle.config(state="normal" if wheel else "disabled")
         self.media_note.config(text={
             "switch": "When off, media keys flash when pressed and the volume/brightness key\n"
-                      "lights only in brightness mode (like stock).",
+                      "lights only in brightness mode (like stock). Fn + Play/Pause and\n"
+                      "Fn + the volume/brightness key switch them on the keyboard too.",
+            "switch-nofn": "When off, media keys flash when pressed and the volume/brightness key\n"
+                           "lights only in brightness mode (like stock).",
             "switch-fine": "When off, media keys flash when pressed and the volume/brightness key\n"
                                "lights only in brightness mode (like stock).",
             "switch-old": "Update the custom firmware (Firmware page) for the volume-key option.",
@@ -626,10 +635,32 @@ class App(tk.Tk):
             "unknown": "Connect the cable (wireless switch off) and click Reconnect to check.",
         }.get(v, "This is an older custom version. Uninstall, then Install, to get the latest."))
 
+    # Fn layer (layer 1) keys for the light toggles: Play/Pause and the volume/brightness (wheel-mode) key
+    FN_TOGGLES = {113: "MEDIA_TOGGLE_KEY", 77: "WHEEL_TOGGLE_KEY"}
+
+    def ensure_fn_toggles(self):
+        """Bind Fn + Play/Pause and Fn + volume/brightness key to the light toggles, unless the user
+        has put something else there. Done once per connection."""
+        import k580_patch
+        if getattr(self, "_fn_checked", None) is self.kb:
+            return
+        self._fn_checked = self.kb
+        layer = bytearray(self.kb.get_matrix(1))
+        changed = False
+        for idx, name in self.FN_TOGGLES.items():
+            want = bytes.fromhex(getattr(k580_patch, name))
+            have = bytes(layer[idx * 4:idx * 4 + 4])
+            # empty, or the old toggle-firmware binding (07 00 00 13) on Play/Pause
+            if have != want and (have == bytes(4) or (idx == 113 and have.hex() == "07000013")):
+                layer[idx * 4:idx * 4 + 4] = want
+                changed = True
+        if changed:
+            self.kb.write(k580.OP_MATRIX, bytes(layer), sub=1)
+
     def marker_variant(self):
         try:
             v = open(self.MARKER).read().strip()
-            return v if v in ("switch", "switch-fine", "switch-old") else ("switch" if v else None)
+            return v if v in ("switch", "switch-fine", "switch-nofn", "switch-old") else ("switch" if v else None)
         except OSError:
             return None
 
@@ -941,6 +972,7 @@ class App(tk.Tk):
         if self.led and led != self.led and led[0x7E:0x80] == b"\x5a\xa5":
             self.led = led
             self.show_lighting()
+            self.refresh_media_state()          # Fn + Play/Pause etc. flip the key-light switches
 
     def show_effect_options(self, hw):
         """Grey out speed/color for effects that ignore them (like the stock app hides them)."""

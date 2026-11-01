@@ -31,7 +31,19 @@ PATCH = [
     # 0F70: MOV DPTR,#0x3CF (lighting byte 0x30) ; MOVX A,@DPTR ; JZ off
     # 0F76: on:  LJMP 0x2ADE      0F79: off: LJMP 0x2AE9
 
+    # Key function 0x13 (a no-op in stock) toggles lighting byte 0x30, so a key bound to 07 00 00 13
+    # switches the volume/brightness key light. Media lights need no patch: stock key function 0x00
+    # (07 00 00 00) already flips lighting byte 0x11 (it was the WASD-swap toggle).
+    (0x37D3, "023b3d", "020f7c"),                   # fn 0x13 -> 0x0F7C instead of the no-op at 0x3B3D
+    (0x0F7C, "07900d0f74508040efb40f07900d0f74518035efb415",
+             "202512" "202d0f" "9003cf" "e0" "6003" "e4" "8002" "7401" "f0" "023801" "22"),
+    # 0F7C: JB 0x25,ret ; JB 0x2D,ret          (same guards as the other key functions)
+    # 0F82: MOV DPTR,#0x3CF ; toggle 0 <-> 1 ; LJMP 0x3801 (fn 0x00's tail: save + feedback flash)
+    # 0F91: ret: RET
 ]
+FN_TOGGLE_SITE = (0x37D3, bytes.fromhex("020f7c"))
+MEDIA_TOGGLE_KEY = "07000000"     # stock key function 0x00: toggle lighting byte 0x11
+WHEEL_TOGGLE_KEY = "07000013"     # patched key function 0x13: toggle lighting byte 0x30
 # A short-lived test build also changed brightness to 0-20 (5% steps) by replacing the level
 # table lookup at 0x9751 with MOV B,#4 / MUL AB. It was dropped; the app still recognises it
 # so it can convert brightness back when that build is uninstalled.
