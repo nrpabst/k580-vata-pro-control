@@ -631,8 +631,15 @@ class App(tk.Tk):
                 elif ev == "quit":
                     self.quit_app()
                     return
+                elif ev == "devices":           # cable or dongle plugged/unplugged: look right away
+                    self.after(300, self.watch_connection)
+                    self.after(1500, self.watch_connection)
         except Exception:
             pass
+        # the dongle reports the keyboard switching on/off (command 0x0A) without being asked
+        if self.wl and any(len(r) > 1 and r[1] & 0x7F == 0x0A for r in list(self.wl.replies)):
+            self.wl.replies.clear()
+            self.after(200, self.watch_connection)
         self.after(200, self.poll_tray)
 
     def quit_app(self):
@@ -1362,7 +1369,11 @@ class App(tk.Tk):
         return c
 
     def load_lighting(self):
-        self.led = bytearray(self.get_led())
+        led = bytearray(self.get_led())
+        if len(led) < 0x80:                    # no answer (e.g. the keyboard is off behind the dongle)
+            self.battery.config(text="")
+            return
+        self.led = led
         if self.kb:
             self.palette = bytearray(self.kb.get_rgb_table())
         self.refresh_media_state()
@@ -1427,7 +1438,7 @@ class App(tk.Tk):
         while the Lighting page is showing."""
         self.after(1000, self.poll_lighting)
         self._poll_n = getattr(self, "_poll_n", 0) + 1
-        if self._poll_n % 3 == 0 and self.state() == "normal":
+        if self._poll_n % 2 == 0:              # fallback; device and dongle events trigger it sooner
             self.watch_connection()
         if self._poll_n % 10 == 0 and self.state() == "normal" and (self.kb or self.wl):
             try:                                # battery, every 10 s on any page

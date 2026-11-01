@@ -22,6 +22,7 @@ WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPA
 
 WM_DESTROY, WM_CLOSE, WM_COMMAND, WM_NULL = 0x0002, 0x0010, 0x0111, 0x0000
 WM_APP = 0x8000
+WM_DEVICECHANGE = 0x0219      # sent to top-level windows when devices are added or removed
 WM_TRAY = WM_APP + 1          # tray icon callback
 WM_SHOW = WM_APP + 2          # another instance asks us to show the window
 WM_LBUTTONUP, WM_LBUTTONDBLCLK, WM_RBUTTONUP = 0x0202, 0x0203, 0x0205
@@ -156,6 +157,8 @@ class Tray:
             user32.DispatchMessageW(ctypes.byref(msg))
 
     def _wndproc(self, hwnd, msg, wparam, lparam):
+        if msg == WM_DEVICECHANGE:
+            self.events.put("devices")              # a USB device came or went (cable, dongle)
         if msg == WM_TRAY:
             if lparam in (WM_LBUTTONUP, WM_LBUTTONDBLCLK):
                 self.events.put("open")
