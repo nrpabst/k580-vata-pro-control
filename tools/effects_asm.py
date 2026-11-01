@@ -21,6 +21,8 @@ import math
 BASE = 0xEC00
 OURS = (0x06, 0x10, 0x12)            # Rainbow wheel, Colorful waterfall, Rotating storm
 COLS, ROWS = 21, 6
+DARK_KEYS = {6, 23, 29, 41, 47}      # G1-G5 (matrix index = col * 6 + row): stock effects leave them dark
+OFF = 0xFF                           # table value: draw this key black
 
 
 class Asm:
@@ -89,9 +91,10 @@ def tables():
             dx, dy = c - 10, (r - 2.5) * 1.6
             ang = (math.atan2(dy, dx) / (2 * math.pi)) % 1.0
             rad = math.hypot(dx, dy)
-            wheel.append(int(ang * 128) & 0x7F)
-            fall.append((r * 20) & 0x7F)
-            storm.append(int(ang * 128 + rad * 7) & 0x7F)
+            dark = c * ROWS + r in DARK_KEYS
+            wheel.append(OFF if dark else int(ang * 128) & 0x7F)
+            fall.append(OFF if dark else (r * 20) & 0x7F)
+            storm.append(OFF if dark else int(ang * 128 + rad * 7) & 0x7F)
     return wheel, fall, storm
 
 
@@ -155,12 +158,17 @@ def build():
     a.mov_dptr(0x0E8F); a.b(0xE0, 0xFA, 0xA3, 0xE0)              # R2 = table hi, A = table lo
     a.b(0x2F, 0xF5, 0x82, 0xEA, 0x34, 0x00, 0xF5, 0x83)          # DPTR = table + R7
     a.b(0xE4, 0x93, 0xFF)                                        # R7 = table[key]
+    a.cjne_a(OFF, "lit")
+    a.b(0xE4, 0xFD, 0xFE, 0xFC)                                  # dark key: R5 = R6 = R4 = 0
+    a.sjmp("store_rgb")
+    a.label("lit")
     a.mov_dptr(0x0E91); a.b(0xE0, 0x2F, 0x54, 0x7F)              # A = (phase + R7) & 127
     a.b(0x75, 0xF0, 0x03, 0xA4)                                  # A,B = A * 3
     a.b(0x24, 0x84, 0xF5, 0x82, 0xE5, 0xF0, 0x34, 0x34, 0xF5, 0x83)   # DPTR = 0x3484 + 3 * hue
     a.b(0xE4, 0x93, 0xFD)                                        # R5 = red
     a.b(0x74, 0x01, 0x93, 0xFE)                                  # R6 = green
     a.b(0x74, 0x02, 0x93, 0xFC)                                  # R4 = blue
+    a.label("store_rgb")
     a.mov_dptr(0x0192); a.b(0xED, 0xF0)
     a.mov_dptr(0x0000); a.b(0xEE, 0xF0)
     a.b(0xEC); a.lcall(0x9749)                                   # brightness-scaled colour

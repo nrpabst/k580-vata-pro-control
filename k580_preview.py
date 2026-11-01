@@ -119,4 +119,8 @@ def frame(hw, t, centers, color, speed, custom=None, colors=None):
         elif hw == 21:                                        # Self-define
             c = (custom or {}).get(i, (0, 0, 0))
         out[i] = c
+    if hw in (6, 16, 18):                   # our firmware versions of these leave G1-G5 dark
+        for i in (6, 23, 29, 41, 47):
+            if i in out:
+                out[i] = (0, 0, 0)
     return out
