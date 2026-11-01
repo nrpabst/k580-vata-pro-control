@@ -1120,6 +1120,9 @@ class App(tk.Tk):
         if slot is not None and not new_effect:
             led[0x3A + 2 * slot] = (led[0x3A + 2 * slot] & 0xE0) | int(round(self.bright.get()))
             led[0x3B + 2 * slot] = (int(round(self.speed.get())) << 4) | k580.COLORS.index(self.color.get() or "red")
+        if slot is not None and not k580.effect_options(hw)[1] and hw != 21:
+            # rainbow-only effects draw in one colour if a single colour is saved: keep them on multi
+            led[0x3B + 2 * slot] = (led[0x3B + 2 * slot] & 0xF0) | 7
         self.config(cursor="watch")
         self.update_idletasks()
         try:
