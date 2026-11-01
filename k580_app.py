@@ -738,6 +738,8 @@ class App(tk.Tk):
         return data
 
     def set_led(self, led):
+        self._led_writes = getattr(self, "_led_writes", 0) + 1   # a background read now is out of date
+        self._polled = None                                       # and so is one that already finished
         if self.kb:
             self.kb.write(k580.OP_LED, bytes(led))
         else:
@@ -1505,9 +1507,15 @@ class App(tk.Tk):
             return
         self._reading = True
 
+        writes = getattr(self, "_led_writes", 0)
+
         def work():
             try:
-                self._polled = bytearray(self.get_led())
+                led = bytearray(self.get_led())
+                # the app changed the lighting while this was reading: it may have the old settings,
+                # which would flip the page (e.g. the effect) back for a moment
+                if writes == getattr(self, "_led_writes", 0):
+                    self._polled = led
             except Exception:
                 pass
             finally:
