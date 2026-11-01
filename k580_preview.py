@@ -119,7 +119,7 @@ def frame(hw, t, centers, color, speed, custom=None, colors=None):
         elif hw == 15:                                        # Rotating windmill
             c = hue(ang * 2 + t * (0.08 + 0.15 * speed))
         elif hw == 16:                                        # Colorful waterfall
-            c = hue(y * 0.32 - t * (0.08 + 0.15 * speed))       # 6 rows span ~1/3 of the rainbow
+            c = hue(t * (0.08 + 0.15 * speed) - y * 0.32)       # 6 rows span ~1/3 of the rainbow
         elif hw == 17:                                        # Blossoming: rainbow rings from the centre
             c = hue(rad * 1.2 - t * (0.08 + 0.15 * speed))
         elif hw == 18:                                        # Rotating storm: rainbow spiral

@@ -11,7 +11,8 @@ How the stock firmware runs an effect (see PROTOCOL.md, section 8c):
   (clears the tick counter).
 - Drawing: put R in XRAM 0x192, G in XRAM 0x0000, B in A and LCALL 0x9749 (applies brightness),
   then R7 = column (0-20), R5 = row (0-5) and LCALL 0x7295 (sets that key).
-- 0x3484 is a 128-entry rainbow table (3 bytes per colour).
+- 0x3484 is the firmware's 128-entry rainbow table (3 bytes per colour). It is unevenly spaced
+  (yellow to red in a few steps), so our effects compute their colours instead (build_hue).
 
 Our two LCALLs replace the ones at 0x2013 and 0x23BB: for our effect ids they drop the return
 address (the inline case table) and run our code; for everything else they LJMP to 0x62A9 as before.
@@ -34,7 +35,7 @@ SKIP = 0xFE                          # table value: don't touch this key
 # our variables live in XRAM 0x0EF0-0x0EF5, which the stock firmware never uses (0x0E8D-0x0E92, used
 # before, are scratch space of the firmware's own routines, which reset the colour phase now and then)
 PHASE, EFFECT, COL, ROW, TABLE = 0x0EF0, 0x0EF1, 0x0EF2, 0x0EF3, 0x0EF4   # TABLE: 2 bytes
-EVEN_AT = 0xEF00                     # flash: 128-byte hue remap (even_hues), after the G-flag code
+HUE_AT = 0xEF00                      # flash: build_hue (the rainbow colour routine), after the G-flag code
 
 
 class Asm:
@@ -96,7 +97,8 @@ class Asm:
 
 
 def tables():
-    """Base rainbow position (0-127) for every key, per effect: index col * 6 + row."""
+    """Base rainbow position (0-253; 254/255 mark skipped/dark keys) for every key, per effect:
+    index col * 6 + row."""
     wheel, fall, storm = bytearray(), bytearray(), bytearray()
     for c in range(COLS):
         for r in range(ROWS):
@@ -105,25 +107,34 @@ def tables():
             rad = math.hypot(dx, dy)
             idx = c * ROWS + r
             special = SKIP if idx in SKIP_KEYS else OFF if idx in DARK_KEYS else None
-            wheel.append(special or int(ang * 128) & 0x7F)
-            fall.append(special or (-r * 8) & 0x7F)        # colours move down the rows, neighbours
-                                                                # 1/16 of the rainbow apart
-            storm.append(special or int(ang * 128 + rad * 7) & 0x7F)
+            hue = lambda v: min(int(v) & 0xFF, 0xFD)
+            wheel.append(special or hue(ang * 256))
+            fall.append(special or hue(-r * 16))           # colours move down the rows, neighbours
+                                                           # 1/16 of the rainbow apart
+            storm.append(special or hue(ang * 256 + rad * 14))
     return wheel, fall, storm
 
 
-def even_hues(firmware):
-    """The firmware's 128-colour rainbow (0x3484) rushes through orange (yellow to red in a few steps)
-    and lingers elsewhere. Map 128 evenly spaced hues to the nearest of its entries instead."""
-    import colorsys
-    rgb = [firmware[0x3484 + i * 3:0x3487 + i * 3] for i in range(128)]
-    hue = [colorsys.rgb_to_hsv(*(c / 255 for c in x))[0] * 360 for x in rgb]
-    pos = [(hue[0] - h) % 360 for h in hue]               # degrees travelled from entry 0
-    out = bytearray()
-    for k in range(128):
-        want = k * 360 / 128
-        out.append(min(range(128), key=lambda i: min(abs(pos[i] - want), 360 - abs(pos[i] - want))))
-    return bytes(out)
+def build_hue(base=HUE_AT):
+    """Rainbow colour for hue A (0-255), worked out instead of read from the firmware's uneven
+    128-colour table: A * 6 gives the sixth of the wheel (B) and how far into it (A), then one
+    channel ramps while the others stay full or off. Returns R5 = red, R6 = green, R4 = blue."""
+    a = Asm(base)
+    a.b(0x75, 0xF0, 0x06, 0xA4)                 # MOV B,#6 ; MUL AB  -> B = sixth, A = ramp
+    a.b(0xFB, 0xF4, 0xFA)                       # R3 = ramp ; R2 = 255 - ramp
+    a.b(0xE5, 0xF0)                             # A = sixth
+    a.cjne_a(0, "s1"); a.b(0x7D, 0xFF, 0xEB, 0xFE, 0x7C, 0x00, 0x22)   # red -> yellow
+    a.label("s1")
+    a.cjne_a(1, "s2"); a.b(0xEA, 0xFD, 0x7E, 0xFF, 0x7C, 0x00, 0x22)   # yellow -> green
+    a.label("s2")
+    a.cjne_a(2, "s3"); a.b(0x7D, 0x00, 0x7E, 0xFF, 0xEB, 0xFC, 0x22)   # green -> cyan
+    a.label("s3")
+    a.cjne_a(3, "s4"); a.b(0x7D, 0x00, 0xEA, 0xFE, 0x7C, 0xFF, 0x22)   # cyan -> blue
+    a.label("s4")
+    a.cjne_a(4, "s5"); a.b(0xEB, 0xFD, 0x7E, 0x00, 0x7C, 0xFF, 0x22)   # blue -> magenta
+    a.label("s5")
+    a.b(0x7D, 0xFF, 0x7E, 0x00, 0xEA, 0xFC, 0x22)                      # magenta -> red
+    return a.link(), a.labels
 
 
 def build():
@@ -165,7 +176,7 @@ def build():
     a.ljmp(0x25DD)
 
     a.label("step")
-    a.mov_dptr(PHASE); a.b(0xE0, 0x04, 0xF0)            # phase++
+    a.mov_dptr(PHASE); a.b(0xE0, 0x24, 0x02, 0xF0)      # phase += 2 (1/128 of the rainbow per step)
     a.mov_dptr(EFFECT); a.b(0xE0)                        # A = effect id
     a.cjne_a(0x06, "s1")
     a.mov_dptr("t_wheel"); a.sjmp("store_t")
@@ -193,13 +204,8 @@ def build():
     a.b(0xE4, 0xFD, 0xFE, 0xFC)                                  # dark key: R5 = R6 = R4 = 0
     a.sjmp("store_rgb")
     a.label("lit")
-    a.mov_dptr(PHASE); a.b(0xE0, 0x2F, 0x54, 0x7F)              # A = (phase + R7) & 127
-    a.mov_dptr(EVEN_AT); a.b(0x93)                               # A = even[A]: evenly spaced hues
-    a.b(0x75, 0xF0, 0x03, 0xA4)                                  # A,B = A * 3
-    a.b(0x24, 0x84, 0xF5, 0x82, 0xE5, 0xF0, 0x34, 0x34, 0xF5, 0x83)   # DPTR = 0x3484 + 3 * hue
-    a.b(0xE4, 0x93, 0xFD)                                        # R5 = red
-    a.b(0x74, 0x01, 0x93, 0xFE)                                  # R6 = green
-    a.b(0x74, 0x02, 0x93, 0xFC)                                  # R4 = blue
+    a.mov_dptr(PHASE); a.b(0xE0, 0x2F)                          # A = phase + R7 (wraps at 256)
+    a.lcall(HUE_AT)                                              # R5, R6, R4 = red, green, blue
     a.label("store_rgb")
     a.mov_dptr(0x0192); a.b(0xED, 0xF0)
     a.mov_dptr(0x0000); a.b(0xEE, 0xF0)
@@ -228,8 +234,7 @@ if __name__ == "__main__":
     print(f"{len(code)} bytes at 0x{BASE:04X}, ends 0x{BASE + len(code):04X}")
     print({k: hex(v) for k, v in labels.items() if not k[0] in "if" or k.endswith("sel")})
     print(code.hex())
-    if len(sys.argv) > 1:                       # path to a firmware image: print the hue remap too
-        print("even hues:", even_hues(open(sys.argv[1], "rb").read()).hex())
+    print("hue routine:", build_hue()[0].hex())
 
 
 def build_gflags(base=0xEEB0):
