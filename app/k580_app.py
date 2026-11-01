@@ -723,6 +723,8 @@ class App(tk.Tk):
             self.load_lighting()
             self.load_colors()
             self.load_macros()
+            if hasattr(self, "prefs"):
+                self.after_idle(self.ensure_active_profile)
             return
         except SystemExit:
             pass
@@ -2240,6 +2242,16 @@ class App(tk.Tk):
         self.profiles = {name: path for name, (path, _data) in found.items()}
         self.ppage.render({name: data for name, (_path, data) in found.items()},
                           getattr(self, "prefs", {}).get("profile"))
+        self.after_idle(self.ensure_active_profile)
+
+    def ensure_active_profile(self):
+        """With no profile active (first start, or the active one was deleted), load Default.
+        Loading needs the cable, so without it this waits for the next cable connection."""
+        active = getattr(self, "prefs", {}).get("profile")
+        if (active in self.profiles or "Default" not in self.profiles or not self.kb
+                or getattr(self, "_profile_job", None)):
+            return
+        self.load_profile("Default")
 
     def read_profile(self, name):
         """Everything a profile holds, read from the keyboard."""
