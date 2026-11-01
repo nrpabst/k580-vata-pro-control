@@ -285,6 +285,31 @@ def parse_g_slot(slot):
     return out
 
 
+G_SLOT = 0x80                         # bytes per G-key recording slot
+G_SLOTS_AT = 1024                     # offset of slot 0 in the 0x05 macro area (flash 0xE000)
+G_SLOT_COUNT = 20                     # 4 banks x G1-G5
+
+
+def build_g_slot(events):
+    """App macro events (k580.macro_event format) -> a G-key slot, the way the keyboard records:
+    [len][0x11][0][0] then [delay low][HID][0x80 for a normal key going down | delay high][0]."""
+    out = bytearray()
+    for ev in events:
+        release, kind = ev[0] & 0x80, (ev[0] >> 4) & 0x07
+        delay = ((ev[0] & 0x0F) << 16) | (ev[1] << 8) | ev[2]
+        code = ev[3]
+        if kind > 1:
+            raise ValueError("G keys can only play keyboard keys (no mouse actions).")
+        hi = min(delay >> 8, 0x7F)
+        flag = 0x80 if (kind == 0 and not release) else 0
+        out += bytes([delay & 0xFF if delay < 0x8000 else 0xFF, code, flag | hi, 0])
+    if len(out) + 4 > G_SLOT:
+        raise ValueError(f"Too long for a G key: {len(out) // 8} keys fit at most "
+                         f"{(G_SLOT - 4) // 8} key presses.")
+    slot = bytes([len(out) + 2, 0x11, 0, 0]) + out
+    return slot + bytes(G_SLOT - len(slot))
+
+
 def parse_macros(buf):
     """Read the app-macro table back into [(name, body_bytes)]."""
     first = int.from_bytes(buf[0:2], "little")
@@ -1701,19 +1726,20 @@ class App(tk.Tk):
         ttk.Entry(tf, textvariable=self.mtext, width=22).pack(side="left")
         ttk.Button(tf, text="Save macro", command=self.save_macro, style="Accent.TButton") \
             .pack(side="left", padx=6)
-        ttk.Label(f, text="Outlined keys have a macro. Click a G key to see what it's recorded to type.",
+        ttk.Label(f, text="Outlined keys have a macro. On a G key, Assign saves the macro as its recording.",
                   style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w")
 
 
     def load_macros(self):
         if not self.kb:
             return
-        area = self.kb.read(0x80 | k580.OP_MACRO, 1024 + 5 * 0x80)     # app macros, then G1-G5 slots
+        area = self.kb.read(0x80 | k580.OP_MACRO, G_SLOTS_AT + G_SLOT_COUNT * G_SLOT)   # app macros, G slots
         self.macros = [(n, [b[i:i + 4] for i in range(0, len(b), 4)]) for n, b in parse_macros(area[:1024])]
         # G1-G5 recordings made on the keyboard itself: shown when a G key is clicked
         self.g_recordings = {}
-        for n, idx in enumerate(self.G_KEYS):
-            keys = parse_g_slot(area[1024 + n * 0x80:1024 + (n + 1) * 0x80])
+        for idx in self.G_KEYS:
+            at = G_SLOTS_AT + self.g_slot(idx) * G_SLOT
+            keys = parse_g_slot(area[at:at + G_SLOT])
             if keys is not None:
                 self.g_recordings[idx] = "  ".join(keys) or "(no keys)"
         self.mlist.delete(0, "end")
@@ -1727,6 +1753,19 @@ class App(tk.Tk):
         return {i: m[i * 4 + 3] for i in range(k580.MATRIX_KEYS) if m[i * 4] == 0x03}
 
     G_KEYS = (6, 23, 29, 41, 47)        # G1-G5 matrix indexes, in recording-slot order
+
+    def g_slot(self, idx):
+        """Recording slot of a G key: 5 per macro bank (lighting byte 0x1B, 1-4)."""
+        bank = (self.led[0x1B] if self.led and 1 <= self.led[0x1B] <= 4 else 1)
+        return (bank - 1) * 5 + self.G_KEYS.index(idx)
+
+    def write_g_slots(self, slots):
+        """{slot: 128-byte slot data} -> keyboard (rewrites the macro area through the G slots)."""
+        area = bytearray(self.kb.read(0x80 | k580.OP_MACRO, G_SLOTS_AT + G_SLOT_COUNT * G_SLOT))
+        for n, data in slots.items():
+            area[G_SLOTS_AT + n * G_SLOT:G_SLOTS_AT + (n + 1) * G_SLOT] = data
+        self.kb.write(k580.OP_MACRO, bytes(area))
+        time.sleep(0.3)
 
     def refresh_macro_keys(self):
         if not self.kb:
@@ -1754,7 +1793,7 @@ class App(tk.Tk):
         pass                                   # selection is read when assigning
 
     def _write_macros(self):
-        area = bytearray(self.kb.read(0x80 | k580.OP_MACRO, 2048))
+        area = bytearray(self.kb.read(0x80 | k580.OP_MACRO, G_SLOTS_AT + G_SLOT_COUNT * G_SLOT))
         area[:1024] = k580.build_macro_buffer(self.macros)
         self.kb.write(k580.OP_MACRO, bytes(area))
         time.sleep(0.3)
@@ -1797,27 +1836,44 @@ class App(tk.Tk):
         if not pick or not self.mkb.selected:
             messagebox.showinfo("K580", "Pick a saved macro and click one or more keys first.")
             return
-        mode, count = self.REPEAT_MODES[self.mmode.get()]
-        entry = k580.macro_key(pick[0], count or max(1, self.mcount.get()), mode)
-        m = bytearray(self.kb.get_matrix(0))
-        for i in self.mkb.selected:
-            m[i * 4:i * 4 + 4] = entry
-        self.kb.write(k580.OP_MATRIX, bytes(m), sub=0)
-        time.sleep(0.2)
-        self.refresh_macro_keys()
+        g_keys = [i for i in self.mkb.selected if i in self.G_KEYS]
+        others = [i for i in self.mkb.selected if i not in self.G_KEYS]
+        if g_keys:                      # G keys keep their G function: the macro becomes their recording
+            try:
+                slot = build_g_slot(self.macros[pick[0]][1])
+            except ValueError as e:
+                messagebox.showerror("K580", str(e))
+                return
+            self.write_g_slots({self.g_slot(i): slot for i in g_keys})
+        if others:
+            mode, count = self.REPEAT_MODES[self.mmode.get()]
+            entry = k580.macro_key(pick[0], count or max(1, self.mcount.get()), mode)
+            m = bytearray(self.kb.get_matrix(0))
+            for i in others:
+                m[i * 4:i * 4 + 4] = entry
+            self.kb.write(k580.OP_MATRIX, bytes(m), sub=0)
+            time.sleep(0.2)
+        self.load_macros()
 
     def unassign_macro(self):
         """Give the selected keys back their original function (from the first-run snapshot)."""
         if not self.need_kb() or not self.mkb.selected:
             return
+        g_keys = [i for i in self.mkb.selected if i in self.G_KEYS]
+        if g_keys:                      # G keys: erase their recording
+            self.write_g_slots({self.g_slot(i): bytes(G_SLOT) for i in g_keys})
+            if len(g_keys) == len(self.mkb.selected):
+                self.load_macros()
+                return
         path = os.path.join(HERE, "backups", "first-run.json")
         orig = bytes.fromhex(json.load(open(path))["matrix"][0]) if os.path.exists(path) else None
         m = bytearray(self.kb.get_matrix(0))
         for i in self.mkb.selected:
-            m[i * 4:i * 4 + 4] = orig[i * 4:i * 4 + 4] if orig else bytes(4)
+            if i not in self.G_KEYS:
+                m[i * 4:i * 4 + 4] = orig[i * 4:i * 4 + 4] if orig else bytes(4)
         self.kb.write(k580.OP_MATRIX, bytes(m), sub=0)
         time.sleep(0.2)
-        self.refresh_macro_keys()
+        self.load_macros()
 
     def delete_macro(self):
         if not self.need_kb():
