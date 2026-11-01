@@ -76,7 +76,13 @@ EFFECTS_CODE = bytes.fromhex(
     "cb4b617803f4f62dfefe11080efefefe201a2036516b2f2b31fefe6f3e3b40fe5f754c4a4ffefe7cff5a5e677586ff69"
     "6c7480feff777a828d9aff8689fe99fe"
 )
-HUE_CODE = bytes.fromhex("75f006a4fbf4fae5f0b400077dffebfe7c0022b40107eafd7eff7c0022b402077d007effebfc22b403077d00eafe7cff22b40407ebfd7e007cff227dff7e00eafc22")   # rainbow colour routine (tools/effects_asm.py build_hue)
+HUE_CODE = bytes.fromhex(
+    "75f006a4fbf4fae5f0b400087dffebfe7c008032b40108eafd7eff7c008027b402087d007effebfc801cb403087d00ea"
+    "fe7cff8011b40408ebfd7e007cff80067dff7e00eafced0303543f90ef6593fdee0303543f90efa593feec0303543f90"
+    "ef6593fc220000000001010102030404050708090b0d0e10121417191c1f2124282b2e3236393d42464a4f54595e6369"
+    "6e747a80868c9399a0a7aeb6bdc5cdd5dde5eef6ff000000000001010101020203040405060708090a0b0d0e0f111214"
+    "1618191b1d20222426292b2e313437393d4043464a4d5154585c6064686c7175797e83878c"
+)   # rainbow colour routine (tools/effects_asm.py build_hue)
 EFFECTS_PATCH = [
     (0x2013, "1262a9", "12ec00"),   # effect changed: LCALL init_sel
     (0x23BB, "1262a9", "12ec30"),  # every frame:    LCALL frame_sel

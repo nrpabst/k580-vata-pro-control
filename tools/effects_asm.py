@@ -115,25 +115,45 @@ def tables():
     return wheel, fall, storm
 
 
+GAMMA, GREEN = 2.2, 0.55               # LED colour correction for build_hue (see there)
+
+
+def gamma_tables(gamma=GAMMA, green=GREEN):
+    """64-step brightness curves: one for red and blue, a dimmer one for green."""
+    curve = lambda scale: bytes(round(255 * scale * (i / 63) ** gamma) for i in range(64))
+    return curve(1.0), curve(green)
+
+
 def build_hue(base=HUE_AT):
     """Rainbow colour for hue A (0-255), worked out instead of read from the firmware's uneven
     128-colour table: A * 6 gives the sixth of the wheel (B) and how far into it (A), then one
-    channel ramps while the others stay full or off. Returns R5 = red, R6 = green, R4 = blue."""
+    channel ramps while the others stay full or off. Each channel then goes through a gamma curve,
+    and green through a dimmer one: the green LEDs are far brighter than the red ones, so without it
+    yellow and orange wash out to pale green and red seems to appear all at once.
+    Returns R5 = red, R6 = green, R4 = blue."""
     a = Asm(base)
     a.b(0x75, 0xF0, 0x06, 0xA4)                 # MOV B,#6 ; MUL AB  -> B = sixth, A = ramp
     a.b(0xFB, 0xF4, 0xFA)                       # R3 = ramp ; R2 = 255 - ramp
     a.b(0xE5, 0xF0)                             # A = sixth
-    a.cjne_a(0, "s1"); a.b(0x7D, 0xFF, 0xEB, 0xFE, 0x7C, 0x00, 0x22)   # red -> yellow
+    a.cjne_a(0, "s1"); a.b(0x7D, 0xFF, 0xEB, 0xFE, 0x7C, 0x00); a.sjmp("fix")   # red -> yellow
     a.label("s1")
-    a.cjne_a(1, "s2"); a.b(0xEA, 0xFD, 0x7E, 0xFF, 0x7C, 0x00, 0x22)   # yellow -> green
+    a.cjne_a(1, "s2"); a.b(0xEA, 0xFD, 0x7E, 0xFF, 0x7C, 0x00); a.sjmp("fix")   # yellow -> green
     a.label("s2")
-    a.cjne_a(2, "s3"); a.b(0x7D, 0x00, 0x7E, 0xFF, 0xEB, 0xFC, 0x22)   # green -> cyan
+    a.cjne_a(2, "s3"); a.b(0x7D, 0x00, 0x7E, 0xFF, 0xEB, 0xFC); a.sjmp("fix")   # green -> cyan
     a.label("s3")
-    a.cjne_a(3, "s4"); a.b(0x7D, 0x00, 0xEA, 0xFE, 0x7C, 0xFF, 0x22)   # cyan -> blue
+    a.cjne_a(3, "s4"); a.b(0x7D, 0x00, 0xEA, 0xFE, 0x7C, 0xFF); a.sjmp("fix")   # cyan -> blue
     a.label("s4")
-    a.cjne_a(4, "s5"); a.b(0xEB, 0xFD, 0x7E, 0x00, 0x7C, 0xFF, 0x22)   # blue -> magenta
+    a.cjne_a(4, "s5"); a.b(0xEB, 0xFD, 0x7E, 0x00, 0x7C, 0xFF); a.sjmp("fix")   # blue -> magenta
     a.label("s5")
-    a.b(0x7D, 0xFF, 0x7E, 0x00, 0xEA, 0xFC, 0x22)                      # magenta -> red
+    a.b(0x7D, 0xFF, 0x7E, 0x00, 0xEA, 0xFC)                                     # magenta -> red
+    a.label("fix")
+    for reg, table in ((0x05, "t_rb"), (0x06, "t_g"), (0x04, "t_rb")):
+        a.b(0xE8 + reg, 0x03, 0x03, 0x54, 0x3F)  # A = Rn >> 2
+        a.mov_dptr(table); a.b(0x93, 0xF8 + reg) # Rn = table[A]
+    a.b(0x22)
+    rb, g = gamma_tables()
+    a.label("t_rb"); a.b(*rb)
+    a.label("t_g"); a.b(*g)
     return a.link(), a.labels
 
 
