@@ -577,7 +577,7 @@ class App(tk.Tk):
         self.status.pack(side="left")
         self.battery = ttk.Label(top, text="", style="Header.TLabel")
         self.battery.pack(side="left", padx=(16, 0))
-        ttk.Button(top, text="Reconnect", command=self.connect).pack(side="right")
+        ttk.Button(top, text="Reconnect", command=self.connect, style="AccentText.TButton").pack(side="right")
 
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True, padx=10, pady=(4, 10))

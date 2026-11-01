@@ -152,4 +152,5 @@ class RGBHeader(tk.Canvas):
                        foreground=[("disabled", "#4b5063")])
         self.style.map("TNotebook.Tab", foreground=[("selected", accent), ("active", FG)],
                        background=[("selected", PANEL), ("active", FIELD)])
+        self.style.configure("AccentText.TButton", foreground=accent)   # e.g. Reconnect: RGB text
         self.after(50, self._tick)
