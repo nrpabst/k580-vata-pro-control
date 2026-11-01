@@ -296,7 +296,7 @@ class ColorPicker(ttk.Frame):
             if rgb == (0, 0, 0):
                 c.create_line(5, 21, 21, 5, fill=k580_theme.MUTED)          # "off"
             c.grid(row=n // 6, column=n % 6, padx=2, pady=4)
-            c.bind("<Button-1>", lambda e, v=rgb: self.pick(v))
+            c.bind("<Button-1>", lambda e, v=rgb: self._user_pick(v))
 
         self.preview = tk.Canvas(sw, width=176, height=24, bg=k580_theme.PANEL, highlightthickness=0)
         self.preview.grid(row=2, column=0, columnspan=6, pady=(12, 0), sticky="w")
@@ -314,11 +314,13 @@ class ColorPicker(ttk.Frame):
         self.marker = self.wheel.create_oval(0, 0, 0, 0, outline="#ffffff", width=2)
         self.wheel.bind("<Button-1>", self._wheel_click)
         self.wheel.bind("<B1-Motion>", self._wheel_click)
+        self.user = False                 # on_pick only fires for the user's own clicks and drags
 
         self.val = tk.DoubleVar(value=1.0)
         vs = ttk.Scale(self, from_=1.0, to=0.0, variable=self.val, orient="vertical", length=size,
                        command=lambda v: self._from_hsv())
         vs.grid(row=0, column=2, padx=(8, 0), sticky="n")
+        vs.bind("<ButtonPress-1>", lambda e: setattr(self, "user", True))
         self._place_marker()
 
     def _draw_wheel(self):
@@ -339,7 +341,21 @@ class ColorPicker(ttk.Frame):
             rows.append("{" + " ".join(row) + "}")
         self.img.put(" ".join(rows))
 
+    def _user_pick(self, rgb):
+        self.user = True
+        self.pick(rgb)
+
+    def show(self, rgb):
+        """Display a colour without reporting it (e.g. to show what's already on the keyboard)."""
+        self.user = False
+        h, s, v = colorsys.rgb_to_hsv(*(c / 255 for c in rgb))
+        self.hsv = [h, s, v]
+        self.val.set(v)
+        self._place_marker()
+        self._show(rgb)
+
     def _wheel_click(self, e):
+        self.user = True
         r0 = self.WHEEL / 2
         dx, dy = e.x - r0, e.y - r0
         d = min(math.hypot(dx, dy) / r0, 1.0)
@@ -370,7 +386,8 @@ class ColorPicker(ttk.Frame):
         hx = "#%02x%02x%02x" % rgb
         self.preview.itemconfig(self.prev_rect, fill=hx)
         self.preview.itemconfig(self.prev_text, text=hx.upper() if rgb != (0, 0, 0) else "off")
-        self.on_pick(rgb)
+        if self.user:
+            self.on_pick(rgb)
 
 
 class App(tk.Tk):
@@ -963,7 +980,7 @@ class App(tk.Tk):
         if self.color.get() in k580.COLORS[:7]:
             self._syncing = True
             try:
-                self.lpicker.pick(self.effect_color(k580.COLORS.index(self.color.get())))
+                self.lpicker.show(self.effect_color(k580.COLORS.index(self.color.get())))
             finally:
                 self._syncing = False
 
