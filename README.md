@@ -26,16 +26,25 @@ Unofficial. Not affiliated with or endorsed by Redragon. Use at your own risk.
   shows the battery level, adds three effects and a Match side-light mode, and can switch to wired
   mode by itself when the cable is plugged in. See [below](#custom-firmware).
 
-## Requirements
+## Download
 
-- Windows with Python 3.10 or newer ([python.org](https://www.python.org/downloads/)). Nothing else to install;
-  the app uses only Tkinter and the Windows HID API.
-- A K580 VATA PRO. Wired mode is its USB ID `258A:010C`; the 2.4G dongle is `3554:FA09`.
+Get **K580 Control.exe** from the [latest release](https://github.com/nrpabst/k580-vata-pro-control/releases/latest)
+and double-click it. It's a single file with everything inside; nothing to install. Windows may warn
+about an unknown publisher the first time (the app isn't code-signed): choose **More info → Run anyway**.
 
-## Running
+Your settings, profiles and backups are kept in `%APPDATA%\K580 Control`.
 
-Download the repository (green **Code** button → **Download ZIP**, or `git clone`), then double-click
-`K580 Control.bat`, or run `pythonw k580_app.py`.
+Needs Windows and a K580 VATA PRO. Wired mode is its USB ID `258A:010C`; the 2.4G dongle is `3554:FA09`.
+
+## Running from source
+
+With Python 3.10 or newer ([python.org](https://www.python.org/downloads/)) and nothing else (the app
+uses only Tkinter and the Windows HID API): download the repository (green **Code** button →
+**Download ZIP**, or `git clone`), then double-click `K580 Control.bat`, or run `pythonw app\k580_app.py`.
+Settings, profiles and backups then live in the repository folder.
+
+To build the .exe yourself: `pip install pyinstaller`, then `python tools\build_exe.py`
+(output in `dist\`).
 
 Lighting works over the cable or the dongle. Keys, Macros, Key colors and Firmware need the
 **cable with the keyboard's wireless switch off**.
@@ -70,7 +79,7 @@ flash can normally be recovered by writing the original back with sinowisp.
 
 ## Command-line library
 
-`k580.py` can be used on its own:
+`app/k580.py` can be used on its own (run these from the `app` folder):
 
 ```bash
 python k580.py info                  # connection, password/ID, lighting block
@@ -85,16 +94,17 @@ python k580.py live 5 0=ff0000       # light Esc red for 5 seconds (live mode)
 
 | File | What it is |
 |------|------------|
-| `k580_app.py` | The desktop app (Tkinter) |
-| `k580.py` | Wired HID protocol library and CLI |
-| `k580_wireless.py` | 2.4G dongle protocol |
-| `k580_patch.py` | Firmware patch definition and installer helpers |
-| `k580_layout.py` | Key positions for drawing the keyboard |
-| `k580_profiles.py` | The Profiles page |
-| `k580_preview.py` | On-screen look-alikes of the lighting effects |
-| `k580_resize.py` | Smooth window resizing on Windows |
+| `K580 Control.bat` | Double-click launcher (runs from source) |
+| `app/k580_app.py` | The desktop app (Tkinter) |
+| `app/k580.py` | Wired HID protocol library and CLI |
+| `app/k580_wireless.py` | 2.4G dongle protocol |
+| `app/k580_patch.py` | Firmware patch definition and installer helpers |
+| `app/k580_profiles.py` | The Profiles page |
+| `app/k580_preview.py` | On-screen look-alikes of the lighting effects |
+| `app/k580_layout.py` | Key positions for drawing the keyboard |
+| `app/k580_theme.py` | Dark theme and RGB header |
+| `app/k580_tray.py` | System-tray icon (Win32, no extra packages) |
+| `app/k580_resize.py` | Smooth window resizing on Windows |
+| `tools/build_exe.py` | Builds the single-file `K580 Control.exe` (PyInstaller) |
 | `tools/effects_asm.py` | Builds the custom firmware's extra effects (8051 code) |
-| `k580_theme.py` | Dark theme and RGB header |
-| `k580_tray.py` | System-tray icon (Win32, no extra packages) |
-| `K580 Control.bat` | Double-click launcher |
 | `third_party/sinowisp/` | Bundled flasher (sinowisp v2.1.0, MIT) used by the Firmware page |

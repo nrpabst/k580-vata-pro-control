@@ -1,6 +1,6 @@
 """K580 Control: a small settings app for the Redragon K580RGB-PRO.
 
-Uses k580.py (wired vendor HID channel). Run with:  pythonw k580_app.py
+Uses k580.py (wired vendor HID channel). Run with:  pythonw app\\k580_app.py  (or K580 Control.bat)
 Changes are written to the keyboard immediately and stored on it.
 """
 import colorsys
@@ -22,7 +22,14 @@ import k580_theme  # noqa: E402
 import k580_resize  # noqa: E402
 import k580_tray  # noqa: E402
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# Running from source: the code is in app\, settings/profiles/backups go next to it in the repo folder.
+# Running as the packaged K580 Control.exe: bundled files (the flasher) are unpacked to sys._MEIPASS,
+# and the user's data goes to %APPDATA%\K580 Control.
+FROZEN = getattr(sys, "frozen", False)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BUNDLE = getattr(sys, "_MEIPASS", ROOT)
+HERE = os.path.join(os.environ.get("APPDATA", ROOT), "K580 Control") if FROZEN else ROOT
+os.makedirs(HERE, exist_ok=True)
 APP_VERSION = "0.3.0"
 UPDATE_URL = "https://api.github.com/repos/nrpabst/k580-vata-pro-control/releases/latest"
 RELEASES_PAGE = "https://github.com/nrpabst/k580-vata-pro-control/releases"
@@ -1115,7 +1122,7 @@ class App(tk.Tk):
         self.refresh_media_state()
 
     def find_sinowisp(self):
-        for p in (os.path.join(HERE, "third_party", "sinowisp", "sinowisp.exe"),
+        for p in (os.path.join(BUNDLE, "third_party", "sinowisp", "sinowisp.exe"),
                   os.path.join(HERE, "sinowisp.exe")):
             if os.path.exists(p):
                 return p
@@ -2480,9 +2487,12 @@ class App(tk.Tk):
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
             if self.autostart.get():
-                pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-                winreg.SetValueEx(k, "K580 Control", 0, winreg.REG_SZ,
-                                  f'"{pyw}" "{os.path.abspath(__file__)}" --tray')
+                if FROZEN:
+                    cmd = f'"{sys.executable}" --tray'
+                else:
+                    pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                    cmd = f'"{pyw}" "{os.path.abspath(__file__)}" --tray'
+                winreg.SetValueEx(k, "K580 Control", 0, winreg.REG_SZ, cmd)
             else:
                 try:
                     winreg.DeleteValue(k, "K580 Control")
