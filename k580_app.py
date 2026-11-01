@@ -2190,11 +2190,13 @@ class App(tk.Tk):
 
     @staticmethod
     def default_led(hx):
-        """The Default profile's lighting: Fixed on, rainbow (multi) colours, full brightness."""
+        """The Default profile's lighting: Fixed on, rainbow (multi) colours, full brightness, RGB side
+        lights."""
         led = bytearray.fromhex(hx)
         led[10], led[9] = 1, 0                               # Fixed on, not Self-define
         led[0x3A] = (led[0x3A] & 0xE0) | 4                   # its brightness: full
         led[0x3B] = (led[0x3B] & 0xF0) | 7                   # its colour: multi (rainbow)
+        led[0x12] = 1                                        # side lights: RGB
         return led.hex()
 
     def make_default_profile(self):
