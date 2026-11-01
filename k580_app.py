@@ -2186,6 +2186,15 @@ class App(tk.Tk):
                         pass
         return dict(sorted(out.items(), key=lambda kv: kv[0].lower()))
 
+    @staticmethod
+    def default_led(hx):
+        """The Default profile's lighting: Fixed on, rainbow (multi) colours, full brightness."""
+        led = bytearray.fromhex(hx)
+        led[10], led[9] = 1, 0                               # Fixed on, not Self-define
+        led[0x3A] = (led[0x3A] & 0xE0) | 4                   # its brightness: full
+        led[0x3B] = (led[0x3B] & 0xF0) | 7                   # its colour: multi (rainbow)
+        return led.hex()
+
     def make_default_profile(self):
         """A "Default" profile, made once: the keyboard as the app first found it (backups/first-run.json,
         saved on the first cable connection), with the standard effect colours and empty G-keys."""
@@ -2200,7 +2209,7 @@ class App(tk.Tk):
                 table[i * 21:i * 21 + 21] = k580.DEFAULT_PALETTE
             data = {"name": "Default", "saved": time.strftime("%Y-%m-%d %H:%M",
                                                               time.localtime(os.path.getmtime(first))),
-                    "led": snap["led"], "matrix": snap["matrix"],
+                    "led": self.default_led(snap["led"]), "matrix": snap["matrix"],
                     "macro_area": (bytes.fromhex(snap["macros"]).ljust(MACRO_AREA, b"\0")).hex(),
                     "rgb_table": table.hex(), "key_colors": snap["color_groups"][0]}
         except (OSError, ValueError, KeyError, IndexError):
