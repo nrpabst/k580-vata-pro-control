@@ -2186,7 +2186,35 @@ class App(tk.Tk):
                         pass
         return dict(sorted(out.items(), key=lambda kv: kv[0].lower()))
 
+    def make_default_profile(self):
+        """A "Default" profile, made once: the keyboard as the app first found it (backups/first-run.json,
+        saved on the first cable connection), with the standard effect colours and empty G-keys."""
+        first = os.path.join(HERE, "backups", "first-run.json")
+        if getattr(self, "prefs", {}).get("default_profile_made") or not os.path.exists(first):
+            return
+        try:
+            with open(first) as fh:
+                snap = json.load(fh)
+            table = bytearray(k580.SIZES[k580.OP_RGB_TABLE])
+            for i in range(k580.RGB_TABLE_EFFECTS + 2):
+                table[i * 21:i * 21 + 21] = k580.DEFAULT_PALETTE
+            data = {"name": "Default", "saved": time.strftime("%Y-%m-%d %H:%M",
+                                                              time.localtime(os.path.getmtime(first))),
+                    "led": snap["led"], "matrix": snap["matrix"],
+                    "macro_area": (bytes.fromhex(snap["macros"]).ljust(MACRO_AREA, b"\0")).hex(),
+                    "rgb_table": table.hex(), "key_colors": snap["color_groups"][0]}
+        except (OSError, ValueError, KeyError, IndexError):
+            return
+        os.makedirs(PROFILES, exist_ok=True)
+        path = os.path.join(PROFILES, "Default.json")
+        if not os.path.exists(path):
+            with open(path, "w") as fh:
+                json.dump(data, fh, indent=1)
+        self.prefs["default_profile_made"] = True           # deleting it later is up to the user
+        save_prefs(self.prefs)
+
     def refresh_profiles(self):
+        self.make_default_profile()
         found = self.read_profiles()
         self.profiles = {name: path for name, (path, _data) in found.items()}
         self.ppage.render({name: data for name, (_path, data) in found.items()},

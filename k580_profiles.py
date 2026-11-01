@@ -144,13 +144,13 @@ class ProfilesPage:
         data = self.profiles.get(self.active)
         self.hero_kb = self.hero_look = None
         if data is None:
-            c.create_text(26, 44, anchor="w", text="NO PROFILE LOADED", font=("Segoe UI Semibold", 8),
-                          fill=th.MUTED)
-            c.create_text(26, 76, anchor="w", text="Save your setup", font=("Segoe UI Light", 20), fill=th.FG)
-            c.create_text(26, 108, anchor="w", width=250, fill=th.MUTED, font=th.FONT,
-                          text="Keep your lighting, keys and macros as a profile, then switch between "
-                               "profiles with one click.")
-            self.hero_tag = None
+            self.hero_tag = c.create_text(26, 28, anchor="nw", text="NO PROFILE LOADED",
+                                          font=("Segoe UI Semibold", 8), fill=th.MUTED)
+            c.create_text(26, 50, anchor="nw", text="Save your setup", font=("Segoe UI Light", 22),
+                          fill=th.FG)
+            c.create_text(26, 98, anchor="nw", width=w - 60, fill=th.MUTED, font=th.FONT,
+                          text="Keep your lighting, keys and macros as a profile, then switch between\n"
+                               "profiles with one click. Load one below, or save the keyboard as a new one.")
             return
         look = Look(data, self.app.side_mode_names())
         self.hero_tag = c.create_text(26, 34, anchor="w", text="ACTIVE PROFILE", fill=th.FG,
