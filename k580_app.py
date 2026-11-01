@@ -577,7 +577,10 @@ class App(tk.Tk):
         self.status.pack(side="left")
         self.battery = ttk.Label(top, text="", style="Header.TLabel")
         self.battery.pack(side="left", padx=(16, 0))
-        ttk.Button(top, text="Reconnect", command=self.connect, style="AccentText.TButton").pack(side="right")
+        # placed by hand so it sits between the status line and the tabs, on the right
+        self.reconnect_btn = ttk.Button(self, text="Reconnect", command=self.connect, style="AccentText.TButton")
+        self.reconnect_btn.place(relx=1.0, x=-58, y=87, anchor="ne")
+        self.after_idle(self.reconnect_btn.lift)            # above the header row and the tab strip
 
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True, padx=10, pady=(4, 10))
