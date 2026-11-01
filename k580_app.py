@@ -553,7 +553,7 @@ class App(tk.Tk):
         self.fw_auto.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
         ttk.Label(f, text="Off: plugging in only charges, and the keyboard stays on 2.4G or Bluetooth\n"
                           "(like stock). On: plugging in uses the cable, whatever the switch says.\n"
-                          "Pick this before installing; to change it later, Uninstall and Install again.",
+                          "Pick this before installing. To change it later, tick or untick it and Reinstall.",
                   style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 4))
         self.fw_install = ttk.Button(f, text="Install custom firmware",
                                      command=lambda: self.install_firmware(removing=False),
@@ -642,14 +642,24 @@ class App(tk.Tk):
             "toggle": "Update the custom firmware from the Firmware page to use these.",
             "stock": "These need the custom firmware (see the Firmware page).",
             "unknown": "Connect the cable once so the app can check your firmware."}[v])
-        # one action at a time: stock -> only Install, any custom -> only Uninstall
-        self.fw_install.config(state="normal" if v == "stock" else "disabled")
-        self.fw_auto.config(state="normal" if v == "stock" else "disabled")
-        self.fw_uninstall.config(state="normal" if v not in ("stock", "unknown") else "disabled")
+        # stock -> Install; any custom -> Reinstall (latest version, with the options ticked now) or Uninstall.
+        # Reinstalling patches the saved stock copy, so it needs backups\my-original-firmware.hex.
+        custom = v not in ("stock", "unknown")
+        can_reinstall = custom and os.path.exists(self.OWN_ORIGINAL)
+        self.fw_install.config(text="Reinstall custom firmware" if custom else "Install custom firmware",
+                               state="normal" if v == "stock" or can_reinstall else "disabled")
+        self.fw_auto.config(state="normal" if v == "stock" or can_reinstall else "disabled")
+        if custom and self.kb and not getattr(self, "_auto_shown_for", None) is self.kb:
+            self._auto_shown_for = self.kb          # start the box at what's installed
+            self.auto_wired.set(bool(getattr(self, "_auto_installed", False)))
+        self.fw_uninstall.config(state="normal" if can_reinstall else "disabled")
         self.fw_hint.config(text={
             "stock": "", "switch": "",
             "unknown": "Connect the cable (wireless switch off) and click Reconnect to check.",
-        }.get(v, "This is an older custom version. Uninstall, then Install, to get the latest."))
+        }.get(v, "This is an older custom version. Click Reinstall to get the latest.")
+            if v == "stock" or not custom or can_reinstall else
+            "Your original firmware backup (backups\\my-original-firmware.hex) is missing,\n"
+            "so Reinstall and Uninstall can't run. Copy it back into the backups folder.")
 
     # Fn layer (layer 1) keys for the light toggles: Play/Pause and the volume/brightness (wheel-mode) key
     FN_TOGGLES = {113: "MEDIA_TOGGLE_KEY", 77: "WHEEL_TOGGLE_KEY"}
@@ -731,6 +741,8 @@ class App(tk.Tk):
                 continue
         return None
 
+    OWN_ORIGINAL = os.path.join(HERE, "backups", "my-original-firmware.hex")
+
     def install_firmware(self, removing):
         import k580_patch
         if not self.kb:
@@ -747,7 +759,9 @@ class App(tk.Tk):
                 "K580", ("This puts your original firmware back" if removing else
                          "This reads your keyboard's firmware, checks it's the exact version the patch is for,\n"
                          "saves an untouched copy for undo, and installs the patched version")
-                + " (about a minute).\n\nKeep the cable plugged in until it says Done. Continue?"):
+                + " (about a minute).\n\nKeep the cable plugged in until it says Done. Continue?"
+                + ("" if removing else "\n\nSwitch to the cable when plugged in: "
+                   + ("on" if self.auto_wired.get() else "off"))):
             return
         self.config(cursor="watch")
         self.update()
