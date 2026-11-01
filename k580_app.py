@@ -1303,6 +1303,8 @@ class App(tk.Tk):
         while the Lighting page is showing."""
         self.after(1000, self.poll_lighting)
         self._poll_n = getattr(self, "_poll_n", 0) + 1
+        if self._poll_n % 3 == 0 and self.state() == "normal":
+            self.watch_connection()
         if self._poll_n % 30 == 0 and self.state() == "normal" and (self.kb or self.wl):
             try:                                # battery, every 30 s on any page
                 self.show_battery(self.get_led())
@@ -1319,6 +1321,30 @@ class App(tk.Tk):
             self.led = led
             self.show_lighting()
             self.refresh_media_state()          # Fn + Play/Pause etc. flip the key-light switches
+
+    def watch_connection(self):
+        """Every few seconds: notice the cable being unplugged or plugged in, and switch between
+        cable and dongle by itself (status and battery follow)."""
+        if self.kb:
+            try:
+                self.kb.password()                  # still there? (a 6-byte read)
+            except Exception:
+                self.connect()                      # unplugged: falls back to the dongle
+            return
+        try:
+            probe = k580.K580()                     # cable plugged in while on the dongle (or nothing)?
+        except (SystemExit, Exception):
+            probe = None
+        if probe:
+            probe.close()
+            self.connect()
+        elif self.wl:
+            try:
+                self.wl.query(0x07)
+            except Exception:
+                self.connect()
+        else:
+            self.connect()                          # nothing connected yet: keep looking
 
     def show_effect_options(self, hw):
         """Grey out speed/color for effects that ignore them (like the stock app hides them)."""
