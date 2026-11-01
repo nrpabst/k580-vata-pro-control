@@ -524,8 +524,18 @@ class App(tk.Tk):
         ttk.Label(f, text="Effect").grid(row=2, column=0, sticky="nw", pady=(12, 0))
         ecell = ttk.Frame(f)
         ecell.grid(row=2, column=1, sticky="w", pady=(8, 0))
-        ec = ttk.Combobox(ecell, textvariable=self.effect, values=names, state="readonly", width=24)
-        ec.pack(anchor="w")
+        erow = ttk.Frame(ecell)
+        erow.pack(anchor="w")
+        ec = ttk.Combobox(erow, textvariable=self.effect, values=names, state="readonly", width=24)
+
+        def step(d):
+            # previous / next effect, wrapping round
+            cur = names.index(self.effect.get()) if self.effect.get() in names else 0
+            self.effect.set(names[(cur + d) % len(names)])
+            self.apply_lighting(new_effect=True)
+        ttk.Button(erow, text="◀", width=3, command=lambda: step(-1)).pack(side="left", padx=(0, 4))
+        ec.pack(side="left")
+        ttk.Button(erow, text="▶", width=3, command=lambda: step(1)).pack(side="left", padx=(4, 0))
         # how-to for Self-define, shown right under the effect box only when it's picked
         self.sd_note = ttk.Label(ecell, style="Muted.TLabel", text=(
             "Give each key its own colour: on the Key colors page, click keys,\n"
