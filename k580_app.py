@@ -516,7 +516,7 @@ class App(tk.Tk):
         self.lkb_centers = self.lkb.centers()
         f.columnconfigure(0, minsize=120)
         f.columnconfigure(1, weight=1)
-        names = [k580.EFFECTS[h] for h in k580.SLOT_HW] + ["OFF"]
+        names = [k580.EFFECTS[h] for h in k580.SLOT_HW if h not in k580.UNSUPPORTED_EFFECTS] + ["OFF"]
         self.effect = tk.StringVar()
         self.bright = tk.DoubleVar()
         self.speed = tk.DoubleVar()

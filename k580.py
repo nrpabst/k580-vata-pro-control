@@ -248,6 +248,9 @@ EFFECTS = {0: "OFF", 1: "Fixed on", 2: "Respire", 3: "Rainbow", 4: "Flash away",
            17: "Blossoming", 18: "Rotating storm", 21: "Self-define"}
 # effect slot (order of LedOpt1..19 in KB.ini) -> hw effect id
 SLOT_HW = list(range(1, 19)) + [21]
+# The stock app's effect list (KB.ini) is shared with other Redragon boards. This firmware's own
+# Fn effect-cycling (0x6F04) skips these ids and they stay dark on the K580, so the app hides them.
+UNSUPPORTED_EFFECTS = {5, 6, 8, 14, 16, 18}
 COLORS = ["red", "green", "blue", "yellow", "magenta", "cyan", "white", "multi/random"]
 # hw effect id -> (has speed, has color), from the speed and color flags of LedOptN in KB.ini.
 # Effects without a color option draw their own rainbow and ignore the color setting.
