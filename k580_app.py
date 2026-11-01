@@ -573,7 +573,7 @@ class App(tk.Tk):
         self._syncing = False
         self.lpicker = ColorPicker(ccell, on_pick=self.pick_effect_color)
         self.lpicker.pack(anchor="w", pady=(10, 0))
-        ttk.Button(ccell, text="Default colours for this effect", command=self.reset_effect_colors) \
+        ttk.Button(ccell, text="Reset colour", command=self.reset_effect_colors) \
             .pack(anchor="w", pady=(8, 0))
         self.effect_note = ttk.Label(f, text="Changes apply instantly.", style="Muted.TLabel", wraplength=560)
         self.effect_note.grid(row=6, column=0, columnspan=2, sticky="w", pady=12)
@@ -922,43 +922,46 @@ class App(tk.Tk):
         self.load_lighting()
         messagebox.showinfo("K580", "Done. Installed now: " + self.fw_state.cget("text"))
 
-    # the keyboard's 8 effect colours (k580.COLORS order); the last one is multi/random
-    SWATCH_RGB = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#ff00ff", "#00ffff", "#ffffff", None]
+    def solid_index(self):
+        """Which of the effect's 7 colour slots the solid colour uses (the selected one, else 0)."""
+        c = self.color.get()
+        return k580.COLORS.index(c) if c in k580.COLORS[:7] else 0
 
-    def color_swatches(self, parent, size=26, gap=6):
-        """A row of clickable colour boxes bound to self.color. Greyed out when `enabled` is False."""
-        n = len(self.SWATCH_RGB)
-        c = tk.Canvas(parent, width=n * (size + gap), height=size + 4, bg=k580_theme.PANEL,
-                      highlightthickness=0, cursor="hand2")
+    def color_swatches(self, parent, size=26):
+        """Two choices bound to self.color: the effect's solid colour, or rainbow (multi).
+        Greyed out when `enabled` is False."""
+        c = tk.Canvas(parent, width=260, height=size + 4, bg=k580_theme.PANEL, highlightthickness=0,
+                      cursor="hand2")
         c.enabled = True
+        spots = [(2, False, "Solid colour"), (132, True, "Rainbow")]   # x, is rainbow, caption
 
         def redraw(*_):
             c.delete("all")
-            current = self.color.get()
-            for i, rgb in enumerate(self.SWATCH_RGB):
-                if rgb:
-                    rgb = "#%02x%02x%02x" % self.effect_color(i)
-                x = 2 + i * (size + gap)
-                if rgb:
-                    c.create_rectangle(x, 2, x + size, 2 + size, fill=rgb, width=0)
-                else:                                   # multi/random: little rainbow
+            multi = self.color.get() == k580.COLORS[7]
+            for x, rainbow, caption in spots:
+                if rainbow:
                     for k in range(size):
                         c.create_line(x + k, 2, x + k, 2 + size, fill=k580_theme.hue_hex(k / size, 0.9, 1.0))
+                else:
+                    c.create_rectangle(x, 2, x + size, 2 + size, width=0,
+                                       fill="#%02x%02x%02x" % self.effect_color(self.solid_index()))
                 if not c.enabled:
                     c.create_rectangle(x, 2, x + size, 2 + size, fill=k580_theme.PANEL, stipple="gray75",
                                        width=0)
-                selected = k580.COLORS[i] == current
-                c.create_rectangle(x - 1, 1, x + size + 1, 3 + size,
-                                   outline=k580_theme.FG if selected and c.enabled else k580_theme.BORDER,
-                                   width=2 if selected and c.enabled else 1)
+                on = c.enabled and rainbow == multi
+                c.create_rectangle(x - 1, 1, x + size + 1, 3 + size, outline=k580_theme.FG if on else k580_theme.BORDER,
+                                   width=2 if on else 1)
+                c.create_text(x + size + 8, 2 + size / 2, anchor="w", text=caption,
+                              fill=k580_theme.FG if on else k580_theme.MUTED, font=("Segoe UI", 9))
             c.config(cursor="hand2" if c.enabled else "")
 
         def click(e):
-            i = int((e.x - 2) // (size + gap))
-            if c.enabled and 0 <= i < n and e.x - 2 - i * (size + gap) <= size:
-                self.color.set(k580.COLORS[i])
-                self.sync_picker()
-                self.apply_lighting()
+            if not c.enabled:
+                return
+            rainbow = e.x >= spots[1][0] - 4
+            self.color.set(k580.COLORS[7] if rainbow else k580.COLORS[self.solid_index()])
+            self.sync_picker()
+            self.apply_lighting()
 
         c.redraw = redraw
         c.bind("<Button-1>", click)
@@ -976,23 +979,22 @@ class App(tk.Tk):
         return tuple(self.palette[a:a + 3])
 
     def sync_picker(self):
-        """Show the selected colour box's colour on the wheel (without writing anything)."""
-        if self.color.get() in k580.COLORS[:7]:
-            self._syncing = True
-            try:
-                self.lpicker.show(self.effect_color(k580.COLORS.index(self.color.get())))
-            finally:
-                self._syncing = False
+        """Show the effect's solid colour on the wheel (without writing anything)."""
+        self._syncing = True
+        try:
+            self.lpicker.show(self.effect_color(self.solid_index()))
+        finally:
+            self._syncing = False
 
     def pick_effect_color(self, rgb):
-        """Wheel or preset on the Lighting page: change the selected colour box of this effect."""
+        """Wheel or preset on the Lighting page: this becomes the effect's solid colour."""
         hw = self.current_hw()
         if self._syncing or not self.kb or not k580.effect_options(hw)[1]:
             return
-        if self.color.get() not in k580.COLORS[:7]:        # multi selected: edit the first box
-            self.color.set(k580.COLORS[0])
+        i = self.solid_index()
+        if self.color.get() != k580.COLORS[i]:          # was on rainbow: switch to the solid colour
+            self.color.set(k580.COLORS[i])
             self.apply_lighting()
-        i = k580.COLORS.index(self.color.get())
         a = hw * 21 + i * 3
         self.palette[a:a + 3] = bytes(rgb)
         self.color_box.redraw()
