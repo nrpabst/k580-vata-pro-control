@@ -4,6 +4,7 @@ __pycache__/
 
 # Per-user data the app creates; never commit (contains your keyboard's firmware and settings)
 backups/
+profiles/
 firmware/
 *.hex
 *.bin

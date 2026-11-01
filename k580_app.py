@@ -292,6 +292,8 @@ def parse_g_slot(slot):
 G_SLOT = 0x80                         # bytes per G-key recording slot
 G_SLOTS_AT = 1024                     # offset of slot 0 in the 0x05 macro area (flash 0xE000)
 G_SLOT_COUNT = 20                     # 4 banks x G1-G5
+MACRO_AREA = G_SLOTS_AT + G_SLOT_COUNT * G_SLOT   # macros + all G-key recordings, in bytes
+PROFILES = os.path.join(HERE, "profiles")
 
 
 def build_g_slot(events):
@@ -590,6 +592,7 @@ class App(tk.Tk):
         nb.pack(fill="both", expand=True, padx=10, pady=(4, 10))
         self.nb = nb
         self.slider_busy = False
+        self.build_profiles(nb)
         self.build_lighting(nb)
         self.build_keys(nb)
         self.build_macros(nb)
@@ -632,7 +635,7 @@ class App(tk.Tk):
         side = self.winfo_width() - outer.winfo_width()      # notebook padding and borders
         need_w = widest + bar + side
         self.minsize(need_w, 520)
-        _o, canvas, inner = self.pages[0]                       # Lighting
+        _o, canvas, inner = next(p for p in self.pages if self.nb.tab(p[0], "text") == "Lighting")
         need_h = self.winfo_height() + inner.winfo_reqheight() - canvas.winfo_height()
         w, h = max(self.winfo_width(), need_w), self.winfo_height()
         x, y = self.winfo_x(), self.winfo_y()
@@ -1157,7 +1160,7 @@ class App(tk.Tk):
         self.update()
         fine_before = self.firmware_variant() == "switch-fine"
         saved = k580.backup(self.kb)
-        saved["macro_area"] = self.kb.read(0x80 | k580.OP_MACRO, 2048).hex()
+        saved["macro_area"] = self.kb.read(0x80 | k580.OP_MACRO, MACRO_AREA).hex()
         os.makedirs(os.path.join(HERE, "backups"), exist_ok=True)
         with open(os.path.join(HERE, "backups", "auto-before-firmware-switch.json"), "w") as fh:
             json.dump(saved, fh, indent=1)
@@ -2153,6 +2156,196 @@ class App(tk.Tk):
             self.set_led(led)
         self.led = led
 
+    # ---------------- profiles
+    def build_profiles(self, nb):
+        f = self.page(nb, "Profiles", 14)
+        f.columnconfigure(0, weight=1)
+        ttk.Label(f, text="Profiles", font=k580_theme.FONT_BOLD).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(f, text="A profile holds everything you set up: lighting and colours (key colours and side\n"
+                          "lights too), all 4 key layers, macros, G-key recordings and keyboard settings.\n"
+                          "Saving and loading need the USB cable.",
+                  style="Muted.TLabel", justify="left").grid(row=1, column=0, columnspan=2, sticky="w",
+                                                             pady=(4, 12))
+        self.plist = tk.Listbox(f, height=12, width=40, activestyle="none", exportselection=False)
+        k580_theme.style_listbox(self.plist)
+        self.plist.grid(row=2, column=0, sticky="nsew")
+        self.plist.bind("<<ListboxSelect>>", lambda e: self.profile_selected())
+        self.plist.bind("<Double-Button-1>", lambda e: self.load_profile())
+        acts = ttk.Frame(f)
+        acts.grid(row=2, column=1, sticky="n", padx=(12, 0))
+        for text, cmd, style in (("Load", self.load_profile, "Accent.TButton"),
+                                 ("Save keyboard to it", self.update_profile, "TButton"),
+                                 ("Rename", self.rename_profile, "TButton"),
+                                 ("Delete", self.delete_profile, "TButton")):
+            ttk.Button(acts, text=text, command=cmd, style=style, width=20).pack(fill="x", pady=(0, 8))
+        new = ttk.Frame(f)
+        new.grid(row=3, column=0, columnspan=2, sticky="w", pady=(16, 0))
+        ttk.Label(new, text="Name").pack(side="left")
+        self.pname = tk.StringVar()
+        e = ttk.Entry(new, textvariable=self.pname, width=26)
+        e.pack(side="left", padx=8)
+        e.bind("<Return>", lambda ev: self.new_profile())
+        ttk.Button(new, text="Save keyboard as new profile", command=self.new_profile).pack(side="left")
+        self.pnote = ttk.Label(f, text="", style="Muted.TLabel")
+        self.pnote.grid(row=4, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        self.after_idle(self.refresh_profiles)
+
+    def profile_files(self):
+        """{name: path} of the saved profiles, sorted by name."""
+        out = {}
+        if os.path.isdir(PROFILES):
+            for fn in os.listdir(PROFILES):
+                if fn.endswith(".json"):
+                    path = os.path.join(PROFILES, fn)
+                    try:
+                        with open(path) as fh:
+                            out[json.load(fh).get("name") or fn[:-5]] = path
+                    except (OSError, ValueError):
+                        pass
+        return dict(sorted(out.items(), key=lambda kv: kv[0].lower()))
+
+    def refresh_profiles(self, select=None):
+        active = getattr(self, "prefs", {}).get("profile")
+        self.profiles = self.profile_files()
+        names = list(self.profiles)
+        self.plist.delete(0, "end")
+        for n in names:
+            self.plist.insert("end", ("\u25cf  " if n == active else "     ") + n)
+        pick = select if select in names else active if active in names else None
+        if pick:
+            self.plist.selection_set(names.index(pick))
+            self.plist.see(names.index(pick))
+        self.pnote.config(text=f"Active profile: {active}" if active in names else
+                          "No profiles yet: type a name above and save the keyboard as it is now."
+                          if not names else "")
+
+    def selected_profile(self):
+        sel = self.plist.curselection()
+        return list(self.profiles)[sel[0]] if sel else None
+
+    def profile_selected(self):
+        name = self.selected_profile()
+        if name:
+            self.pname.set(name)
+
+    def read_profile(self, name):
+        """Everything a profile holds, read from the keyboard."""
+        return {"name": name, "saved": time.strftime("%Y-%m-%d %H:%M"),
+                "led": bytes(self.get_led()).hex(),
+                "matrix": [self.kb.get_matrix(layer).hex() for layer in range(k580.LAYERS)],
+                "macro_area": self.kb.read(0x80 | k580.OP_MACRO, MACRO_AREA).hex(),
+                "rgb_table": self.kb.get_rgb_table().hex(),
+                "key_colors": self.kb.get_color_group(0).hex()}
+
+    def write_profile_file(self, name, path=None):
+        data = self.read_profile(name)
+        os.makedirs(PROFILES, exist_ok=True)
+        if path is None:
+            stem = "".join(c if c.isalnum() or c in " -_" else "_" for c in name).strip() or "profile"
+            path, n = os.path.join(PROFILES, stem + ".json"), 2
+            while os.path.exists(path):
+                path, n = os.path.join(PROFILES, f"{stem} ({n}).json"), n + 1
+        with open(path, "w") as fh:
+            json.dump(data, fh, indent=1)
+
+    def set_active_profile(self, name):
+        self.prefs["profile"] = name
+        save_prefs(self.prefs)
+
+    def busy(self, work):
+        """Run `work` with the busy cursor showing."""
+        self.config(cursor="watch")
+        self.update_idletasks()
+        try:
+            work()
+        finally:
+            self.config(cursor="")
+
+    def new_profile(self):
+        name = self.pname.get().strip()
+        if not name:
+            messagebox.showinfo("K580", "Type a name for the new profile first.")
+            return
+        if name in self.profiles:
+            messagebox.showinfo("K580", f"There's already a profile called {name}. Pick it and use "
+                                        "Save keyboard to it to update it, or choose another name.")
+            return
+        if not self.need_kb():
+            return
+        self.busy(lambda: self.write_profile_file(name))
+        self.set_active_profile(name)
+        self.refresh_profiles(select=name)
+
+    def update_profile(self):
+        name = self.selected_profile()
+        if not name or not self.need_kb():
+            return
+        if not messagebox.askyesno("K580", f"Replace profile {name} with the keyboard's current setup?"):
+            return
+        self.busy(lambda: self.write_profile_file(name, self.profiles[name]))
+        self.set_active_profile(name)
+        self.refresh_profiles(select=name)
+
+    def load_profile(self):
+        name = self.selected_profile()
+        if not name or not self.need_kb():
+            return
+        with open(self.profiles[name]) as fh:
+            data = json.load(fh)
+
+        def work():
+            self.set_led(bytes.fromhex(data["led"]))
+            time.sleep(0.1)
+            for layer, hx in enumerate(data["matrix"]):
+                self.kb.write(k580.OP_MATRIX, bytes.fromhex(hx), sub=layer)
+                time.sleep(0.1)
+            self.kb.write(k580.OP_MACRO, bytes.fromhex(data["macro_area"]))
+            time.sleep(0.3)
+            table = bytearray.fromhex(data["rgb_table"])[:512]
+            table[0x1FA:0x1FC] = bytes([0x5A, 0xA5])
+            self.kb.write(k580.OP_RGB_TABLE, bytes(table))
+            time.sleep(0.1)
+            self.kb.write(k580.OP_COLOR_GROUP, bytes.fromhex(data["key_colors"]), sub=0)
+            time.sleep(0.2)
+        self.busy(work)
+        self.set_active_profile(name)
+        self.refresh_profiles(select=name)
+        self.load_lighting()
+        self.load_colors()
+        self.load_macros()
+
+    def rename_profile(self):
+        name, new = self.selected_profile(), self.pname.get().strip()
+        if not name:
+            return
+        if not new or new == name:
+            messagebox.showinfo("K580", "Type the new name in the Name box, then press Rename.")
+            return
+        if new in self.profiles:
+            messagebox.showinfo("K580", f"There's already a profile called {new}.")
+            return
+        path = self.profiles[name]
+        with open(path) as fh:
+            data = json.load(fh)
+        data["name"] = new
+        with open(path, "w") as fh:
+            json.dump(data, fh, indent=1)
+        if self.prefs.get("profile") == name:
+            self.set_active_profile(new)
+        self.refresh_profiles(select=new)
+
+    def delete_profile(self):
+        name = self.selected_profile()
+        if not name or not messagebox.askyesno("K580", f"Delete profile {name}? The keyboard keeps its "
+                                                        "current setup."):
+            return
+        os.remove(self.profiles[name])
+        if self.prefs.get("profile") == name:
+            self.prefs.pop("profile", None)
+            save_prefs(self.prefs)
+        self.pname.set("")
+        self.refresh_profiles()
+
     # ---------------- settings page
     SLEEP_OPTIONS = {"Keyboard default": 0, "1 minute": 2, "3 minutes": 6, "5 minutes": 10,
                      "10 minutes": 20, "30 minutes": 60, "1 hour": 120}
@@ -2330,7 +2523,7 @@ class App(tk.Tk):
         if not path:
             return
         data = k580.backup(self.kb)
-        data["macro_area"] = self.kb.read(0x80 | k580.OP_MACRO, 2048).hex()
+        data["macro_area"] = self.kb.read(0x80 | k580.OP_MACRO, MACRO_AREA).hex()
         with open(path, "w") as fh:
             json.dump(data, fh, indent=1)
         messagebox.showinfo("K580", "Backup saved.")
