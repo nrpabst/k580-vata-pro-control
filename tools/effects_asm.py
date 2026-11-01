@@ -30,6 +30,9 @@ SKIP_KEYS = {77, 88, 113, 125,       # volume/brightness key + media keys: their
              23, 29, 41, 47, 71}   # side light strips: the firmware drives the 8 spots listed at 0x3758
                                    # (23 29 41 47 71 77 113 125), which share the G2-G5/knob/media spots
 SKIP = 0xFE                          # table value: don't touch this key
+# our variables live in XRAM 0x0EF0-0x0EF5, which the stock firmware never uses (0x0E8D-0x0E92, used
+# before, are scratch space of the firmware's own routines, which reset the colour phase now and then)
+PHASE, EFFECT, COL, ROW, TABLE = 0x0EF0, 0x0EF1, 0x0EF2, 0x0EF3, 0x0EF4   # TABLE: 2 bytes
 
 
 class Asm:
@@ -120,7 +123,7 @@ def build():
     a.b(0x15, 0x81, 0x15, 0x81)
     a.jnb(0x01, "set_speed")
     a.b(0xC2, 0x01, 0xD2, 0x02, 0xC2, 0x4A, 0xC2, 0x2D)
-    a.b(0xE4); a.mov_dptr(0x0E91); a.b(0xF0)
+    a.b(0xE4); a.mov_dptr(PHASE); a.b(0xF0)
     a.label("set_speed")
     a.mov_dptr(0x0DAF); a.b(0xE0)
     a.mov_dptr(0x3741)
@@ -134,7 +137,7 @@ def build():
     a.ljmp(0x62A9)
     a.label("frame_ours")
     a.b(0x15, 0x81, 0x15, 0x81)
-    a.mov_dptr(0x0E92); a.b(0xF0)
+    a.mov_dptr(EFFECT); a.b(0xF0)
     a.mov_dptr(0x0932); a.b(0xE0, 0xFE, 0xA3, 0xE0, 0xFF)
     a.b(0xC3)
     a.mov_dptr(0x0399); a.b(0xE0, 0x9F)
@@ -146,8 +149,8 @@ def build():
     a.ljmp(0x25DD)
 
     a.label("step")
-    a.mov_dptr(0x0E91); a.b(0xE0, 0x04, 0xF0)            # phase++
-    a.mov_dptr(0x0E92); a.b(0xE0)                        # A = effect id
+    a.mov_dptr(PHASE); a.b(0xE0, 0x04, 0xF0)            # phase++
+    a.mov_dptr(EFFECT); a.b(0xE0)                        # A = effect id
     a.cjne_a(0x06, "s1")
     a.mov_dptr("t_wheel"); a.sjmp("store_t")
     a.label("s1")
@@ -157,14 +160,14 @@ def build():
     a.mov_dptr("t_storm")
     a.label("store_t")                                  # XRAM 0xE8F:0xE90 = table address
     a.b(0xAA, 0x83, 0xAB, 0x82)                          # MOV R2,DPH ; MOV R3,DPL
-    a.mov_dptr(0x0E8F); a.b(0xEA, 0xF0, 0xA3, 0xEB, 0xF0)
-    a.b(0xE4); a.mov_dptr(0x0E8D); a.b(0xF0)            # col = 0
+    a.mov_dptr(TABLE); a.b(0xEA, 0xF0, 0xA3, 0xEB, 0xF0)
+    a.b(0xE4); a.mov_dptr(COL); a.b(0xF0)            # col = 0
     a.label("col_loop")
-    a.b(0xE4); a.mov_dptr(0x0E8E); a.b(0xF0)            # row = 0
+    a.b(0xE4); a.mov_dptr(ROW); a.b(0xF0)            # row = 0
     a.label("row_loop")
-    a.mov_dptr(0x0E8D); a.b(0xE0, 0x75, 0xF0, 0x06, 0xA4, 0xFF)   # R7 = col * 6
-    a.mov_dptr(0x0E8E); a.b(0xE0, 0x2F, 0xFF)                    # R7 += row
-    a.mov_dptr(0x0E8F); a.b(0xE0, 0xFA, 0xA3, 0xE0)              # R2 = table hi, A = table lo
+    a.mov_dptr(COL); a.b(0xE0, 0x75, 0xF0, 0x06, 0xA4, 0xFF)   # R7 = col * 6
+    a.mov_dptr(ROW); a.b(0xE0, 0x2F, 0xFF)                    # R7 += row
+    a.mov_dptr(TABLE); a.b(0xE0, 0xFA, 0xA3, 0xE0)              # R2 = table hi, A = table lo
     a.b(0x2F, 0xF5, 0x82, 0xEA, 0x34, 0x00, 0xF5, 0x83)          # DPTR = table + R7
     a.b(0xE4, 0x93, 0xFF)                                        # R7 = table[key]
     a.cjne_a(SKIP, "not_skip")
@@ -174,7 +177,7 @@ def build():
     a.b(0xE4, 0xFD, 0xFE, 0xFC)                                  # dark key: R5 = R6 = R4 = 0
     a.sjmp("store_rgb")
     a.label("lit")
-    a.mov_dptr(0x0E91); a.b(0xE0, 0x2F, 0x54, 0x7F)              # A = (phase + R7) & 127
+    a.mov_dptr(PHASE); a.b(0xE0, 0x2F, 0x54, 0x7F)              # A = (phase + R7) & 127
     a.b(0x75, 0xF0, 0x03, 0xA4)                                  # A,B = A * 3
     a.b(0x24, 0x84, 0xF5, 0x82, 0xE5, 0xF0, 0x34, 0x34, 0xF5, 0x83)   # DPTR = 0x3484 + 3 * hue
     a.b(0xE4, 0x93, 0xFD)                                        # R5 = red
@@ -184,13 +187,13 @@ def build():
     a.mov_dptr(0x0192); a.b(0xED, 0xF0)
     a.mov_dptr(0x0000); a.b(0xEE, 0xF0)
     a.b(0xEC); a.lcall(0x9749)                                   # brightness-scaled colour
-    a.mov_dptr(0x0E8D); a.b(0xE0, 0xFF)
-    a.mov_dptr(0x0E8E); a.b(0xE0, 0xFD)
+    a.mov_dptr(COL); a.b(0xE0, 0xFF)
+    a.mov_dptr(ROW); a.b(0xE0, 0xFD)
     a.lcall(0x7295)                                              # set key (R7 = col, R5 = row)
     a.label("next_key")
-    a.mov_dptr(0x0E8E); a.b(0xE0, 0x04, 0xF0)                    # row++
+    a.mov_dptr(ROW); a.b(0xE0, 0x04, 0xF0)                    # row++
     a.cjne_a(ROWS, "row_back")
-    a.mov_dptr(0x0E8D); a.b(0xE0, 0x04, 0xF0)                    # col++
+    a.mov_dptr(COL); a.b(0xE0, 0x04, 0xF0)                    # col++
     a.cjne_a(COLS, "col_back")
     a.b(0x22)                                                    # RET
     a.label("row_back"); a.ljmp("row_loop")
