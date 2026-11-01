@@ -11,7 +11,7 @@ COLOR_RGB = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255)
              (255, 255, 255)]
 MULTI = 7
 # effects that react to key presses (the preview simulates presses)
-REACTIVE = {4: "a light spreads from each key you press out to the edges",
+REACTIVE = {4: "colours run left and right along the row of each key you press",
             7: "ripples spread from the keys you press",
             9: "keys you press go dark and fade back",
             12: "keys you press light up and fade"}
@@ -69,10 +69,15 @@ def frame(hw, t, centers, color, speed, custom=None, colors=None):
                 age = t - tp
                 kx, ky = centers[k]
                 d = math.hypot((x - kx) * COLS, (y - ky) * ROWS)   # distance in keys
-                if hw == 4:                                   # Flash away: a band runs to the edges
-                    front = age * 12 * rate
-                    if front - 1.5 < d < front:
-                        level, tint = 1.0, hue(rnd(tp))
+                if hw == 4:                                   # Flash away: lights run left and right along
+                    if abs(y - ky) * ROWS > 0.5:              # the pressed key's row, each key its own
+                        continue                              # rainbow colour, fading behind the front
+                    dx = abs(x - kx) * COLS
+                    front = age * 14 * rate
+                    if dx <= front:
+                        glow = max(0.0, 1 - (front - dx) / 5)
+                        if glow > level:
+                            level, tint = glow, hue(x * 1.3 + rnd(tp))
                 elif hw == 7:                                 # Ripples: fading rings
                     front = age * 8 * rate
                     ring = max(0.0, 1 - abs(d - front)) * max(0.0, 1 - age / 1.8)
