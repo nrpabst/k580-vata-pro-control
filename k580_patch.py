@@ -53,8 +53,8 @@ PATCH = [
     # 0FB4: MOV A,0x0A ; CJNE A,#0xFF,store ; MOV DPTR,#0x1C8 ; MOVX A,@DPTR
     # 0FBD: store: MOV DPTR,#0x3BB ; MOVX @DPTR,A ; LJMP 0x0F92
     (0x0F92, "07900d0f744f802aefb45e07900d0f741a801f",
-             "90037e" "e0" "9003bc" "f0" "90037f" "e0" "9003bd" "f0" "020fc4"),
-    # 0F92: copy XRAM 0x37E -> 0x3BC and 0x37F -> 0x3BD ; LJMP 0x0FC4
+             "90037e" "e0" "9003bc" "f0" "90037f" "e0" "9003bd" "f0" "02eeb0"),
+    # 0F92: copy XRAM 0x37E -> 0x3BC and 0x37F -> 0x3BD ; LJMP 0xEEB0 (G-key flags, then 0x0FC4's work)
     (0x0FC4, "f0e4a3f0a3f0", "9003b0" "02421f"),    # MOV DPTR,#0x3B0 (the replaced instruction) ; LJMP 0x421F
 ]
 # Effects the stock firmware lacks (Rainbow wheel 6, Colorful waterfall 0x10, Rotating storm 0x12),
@@ -91,6 +91,9 @@ RECORD_FIX_PATCH = [
     (0x3BC2, "d21dc205", "02eea000"),               # LJMP 0xEEA0 ; NOP  (was SETB 0x1D ; CLR 0x05)
     (0xEEA0, "00" * 11, "301e07" "d21d" "c205" "023bc6" "22"),
     # EEA0: JNB 0x1E,cancel ; SETB 0x1D ; CLR 0x05 ; LJMP 0x3BC6     EEAA: cancel: RET
+    # G-key 'has a recording' flags follow flash (tools/effects_asm.py build_gflags), so recordings
+    # the app saves or clears light their G key right away, not after a restart.
+    (0xEEB0, "00" * 65, "203c38c006c0077f00ef75f080a4f582e5f024e0f583e4937e00c3940240027e0174b62ff582e4340df583e0b4ff028002eef00fbf14d2d007d0069003b002421f"),
 ]
 # Optional: switch to the cable whenever it's plugged in. The mode switch on the keyboard is read at
 # 0x84AB (pins P5.5 / P3.1, 10 samples each): 2.4G, Bluetooth or cable (XRAM 0x3AD = 1 / 2 / 0).
@@ -109,7 +112,8 @@ BATTERY_BYTE = 0x1C               # lighting-block byte: battery % (0-100). Not 
 # bytes that only the latest custom build has (fn 0x13 light toggle, battery copy)
 LATEST_SITES = [(0x37D3, bytes.fromhex("020f7c")), (0x421C, bytes.fromhex("020fb4")),
                 (0x0FC4, bytes.fromhex("9003b0")),
-                (0x2013, bytes.fromhex("12ec00")), (0x3BC2, bytes.fromhex("02eea0"))]
+                (0x2013, bytes.fromhex("12ec00")), (0x3BC2, bytes.fromhex("02eea0")),
+                (0x0FA2, bytes.fromhex("02eeb0"))]
 BATTERY_RAW = 0x1D                # lighting-block bytes 0x1D-0x1E: raw battery reading, big-endian
 MEDIA_TOGGLE_KEY = "07000000"     # stock key function 0x00: toggle lighting byte 0x11
 WHEEL_TOGGLE_KEY = "07000013"     # patched key function 0x13: toggle lighting byte 0x30

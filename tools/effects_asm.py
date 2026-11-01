@@ -203,3 +203,32 @@ if __name__ == "__main__":
     print(f"{len(code)} bytes at 0x{BASE:04X}, ends 0x{BASE + len(code):04X}")
     print({k: hex(v) for k, v in labels.items() if not k[0] in "if" or k.endswith("sel")})
     print(code.hex())
+
+
+def build_gflags(base=0xEEB0):
+    """Keeps the G-key 'has a recording' flags (XRAM 0x0DB6 + slot) in step with flash, so G keys the
+    app records or clears light up right away instead of after a restart. Runs from the 0x421C routine
+    (via the battery copy at 0x0F92, which used to LJMP 0x0FC4): skipped while recording (bit 0x3C),
+    and a slot that is being recorded (flag 0xFF) is left alone."""
+    a = Asm(base)
+    a.b(0x20, 0x3C); a.rel("done")                      # JB 0x3C,done
+    a.b(0xC0, 0x06, 0xC0, 0x07)                          # PUSH AR6 ; PUSH AR7
+    a.b(0x7F, 0x00)                                      # MOV R7,#0
+    a.label("loop")
+    a.b(0xEF, 0x75, 0xF0, 0x80, 0xA4)                    # A = R7 * 0x80
+    a.b(0xF5, 0x82, 0xE5, 0xF0, 0x24, 0xE0, 0xF5, 0x83)  # DPTR = 0xE000 + slot * 0x80
+    a.b(0xE4, 0x93)                                      # A = slot length byte
+    a.b(0x7E, 0x00, 0xC3, 0x94, 0x02)                    # R6 = 0 ; A - 2
+    a.b(0x40); a.rel("store")                            # JC store (shorter than 2: empty)
+    a.b(0x7E, 0x01)                                      # R6 = 1
+    a.label("store")
+    a.b(0x74, 0xB6, 0x2F, 0xF5, 0x82, 0xE4, 0x34, 0x0D, 0xF5, 0x83)   # DPTR = 0x0DB6 + R7
+    a.b(0xE0); a.cjne_a(0xFF, "write"); a.sjmp("next")  # recording into this slot: leave it
+    a.label("write")
+    a.b(0xEE, 0xF0)                                      # flag = R6
+    a.label("next")
+    a.b(0x0F, 0xBF, 0x14); a.rel("loop")                 # INC R7 ; CJNE R7,#20,loop
+    a.b(0xD0, 0x07, 0xD0, 0x06)                          # POP AR7 ; POP AR6
+    a.label("done")
+    a.mov_dptr(0x03B0); a.ljmp(0x421F)                   # the instruction the battery hook replaced
+    return a.link(), a.labels
