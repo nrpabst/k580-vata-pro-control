@@ -253,11 +253,18 @@ SLOT_HW = list(range(1, 19)) + [21]
 # The stock app's effect list (KB.ini) is shared with other Redragon boards. This firmware's own
 # Fn effect-cycling (0x6F04) skips these ids and they stay dark on the K580, so the app hides them.
 UNSUPPORTED_EFFECTS = {5, 6, 8, 14, 16, 18}
+# The latest custom firmware adds these back (k580_patch.EFFECTS_PATCH).
+CUSTOM_FIRMWARE_EFFECTS = {6, 16, 18}
+
+
+def effect_names(custom_firmware=False):
+    missing = UNSUPPORTED_EFFECTS - (CUSTOM_FIRMWARE_EFFECTS if custom_firmware else set())
+    return [EFFECTS[h] for h in SLOT_HW if h not in missing] + ["OFF"]
 COLORS = ["red", "green", "blue", "yellow", "magenta", "cyan", "white", "multi/random"]
 # hw effect id -> (has speed, has color), from the speed and color flags of LedOptN in KB.ini.
 # Effects without a color option draw their own rainbow and ignore the color setting.
 NO_SPEED = {1, 21}
-NO_COLOR = {3, 6, 15, 16, 17, 21}
+NO_COLOR = {3, 6, 15, 16, 17, 18, 21}
 
 
 def effect_options(hw):

@@ -1,0 +1,189 @@
+"""Builds the extra lighting effects that the K580 firmware is missing (Rainbow wheel, Colorful
+waterfall, Rotating storm) as 8051 code for the free flash at 0xEC00, plus the patch entries that
+hook them in. Run it to print the bytes; k580_patch.py holds the result.
+
+How the stock firmware runs an effect (see PROTOCOL.md, section 8c):
+- When the effect changes, ?C?CCASE (0x62A9) is called at 0x2013 with A = effect id and an inline
+  case table; each case sets bit 0x02, picks its speed interval and jumps to 0x23A7 (stores it in
+  XRAM 0x932) which then runs the per-frame switch.
+- Every frame, ?C?CCASE is called at 0x23BB with A = XRAM 0x920 (effect id). A case compares the tick
+  counter 0x398 with the interval 0x932 and, when it's due, draws one step and jumps to 0x25DD
+  (clears the tick counter).
+- Drawing: put R in XRAM 0x192, G in XRAM 0x0000, B in A and LCALL 0x9749 (applies brightness),
+  then R7 = column (0-20), R5 = row (0-5) and LCALL 0x7295 (sets that key).
+- 0x3484 is a 128-entry rainbow table (3 bytes per colour).
+
+Our two LCALLs replace the ones at 0x2013 and 0x23BB: for our effect ids they drop the return
+address (the inline case table) and run our code; for everything else they LJMP to 0x62A9 as before.
+"""
+import math
+
+BASE = 0xEC00
+OURS = (0x06, 0x10, 0x12)            # Rainbow wheel, Colorful waterfall, Rotating storm
+COLS, ROWS = 21, 6
+
+
+class Asm:
+    def __init__(self, base):
+        self.base, self.code, self.labels, self.fix = base, bytearray(), {}, []
+
+    def here(self):
+        return self.base + len(self.code)
+
+    def label(self, name):
+        self.labels[name] = self.here()
+
+    def b(self, *bs):
+        self.code += bytes(bs)
+
+    def rel(self, name):                 # 1-byte relative to the end of the instruction
+        self.fix.append(("rel", len(self.code), name))
+        self.code.append(0)
+
+    def abs16(self, name):
+        self.fix.append(("abs", len(self.code), name))
+        self.code += b"\0\0"
+
+    def link(self):
+        for kind, at, name in self.fix:
+            target = self.labels[name] if isinstance(name, str) else name
+            if kind == "abs":
+                self.code[at:at + 2] = bytes([target >> 8, target & 0xFF])
+            else:
+                d = target - (self.base + at + 1)
+                assert -128 <= d <= 127, (name, d)
+                self.code[at] = d & 0xFF
+        return bytes(self.code)
+
+    # instructions
+    def mov_dptr(self, v):
+        if isinstance(v, str):
+            self.b(0x90); self.abs16(v)
+        else:
+            self.b(0x90, v >> 8, v & 0xFF)
+
+    def ljmp(self, t):
+        self.b(0x02); self.abs16(t)
+
+    def lcall(self, t):
+        self.b(0x12); self.abs16(t)
+
+    def cjne_a(self, imm, t):
+        self.b(0xB4, imm); self.rel(t)
+
+    def sjmp(self, t):
+        self.b(0x80); self.rel(t)
+
+    def jnc(self, t):
+        self.b(0x50); self.rel(t)
+
+    def jnb(self, bit, t):
+        self.b(0x30, bit); self.rel(t)
+
+
+def tables():
+    """Base rainbow position (0-127) for every key, per effect: index col * 6 + row."""
+    wheel, fall, storm = bytearray(), bytearray(), bytearray()
+    for c in range(COLS):
+        for r in range(ROWS):
+            dx, dy = c - 10, (r - 2.5) * 1.6
+            ang = (math.atan2(dy, dx) / (2 * math.pi)) % 1.0
+            rad = math.hypot(dx, dy)
+            wheel.append(int(ang * 128) & 0x7F)
+            fall.append((r * 20) & 0x7F)
+            storm.append(int(ang * 128 + rad * 7) & 0x7F)
+    return wheel, fall, storm
+
+
+def build():
+    a = Asm(BASE)
+    wheel, fall, storm = tables()
+    a.label("init_sel")
+    for i, eid in enumerate(OURS):
+        a.cjne_a(eid, f"i{i}")
+        a.sjmp("init_ours")
+        a.label(f"i{i}")
+    a.ljmp(0x62A9)
+    a.label("init_ours")
+    a.b(0x15, 0x81, 0x15, 0x81)
+    a.jnb(0x01, "set_speed")
+    a.b(0xC2, 0x01, 0xD2, 0x02, 0xC2, 0x4A, 0xC2, 0x2D)
+    a.b(0xE4); a.mov_dptr(0x0E91); a.b(0xF0)
+    a.label("set_speed")
+    a.mov_dptr(0x0DAF); a.b(0xE0)
+    a.mov_dptr(0x3741)
+    a.ljmp(0x23A7)
+
+    a.label("frame_sel")
+    for i, eid in enumerate(OURS):
+        a.cjne_a(eid, f"f{i}")
+        a.sjmp("frame_ours")
+        a.label(f"f{i}")
+    a.ljmp(0x62A9)
+    a.label("frame_ours")
+    a.b(0x15, 0x81, 0x15, 0x81)
+    a.mov_dptr(0x0E92); a.b(0xF0)
+    a.mov_dptr(0x0932); a.b(0xE0, 0xFE, 0xA3, 0xE0, 0xFF)
+    a.b(0xC3)
+    a.mov_dptr(0x0399); a.b(0xE0, 0x9F)
+    a.mov_dptr(0x0398); a.b(0xE0, 0x9E)
+    a.jnc("due")
+    a.b(0x22)
+    a.label("due")
+    a.lcall("step")
+    a.ljmp(0x25DD)
+
+    a.label("step")
+    a.mov_dptr(0x0E91); a.b(0xE0, 0x04, 0xF0)            # phase++
+    a.mov_dptr(0x0E92); a.b(0xE0)                        # A = effect id
+    a.cjne_a(0x06, "s1")
+    a.mov_dptr("t_wheel"); a.sjmp("store_t")
+    a.label("s1")
+    a.cjne_a(0x10, "s2")
+    a.mov_dptr("t_fall"); a.sjmp("store_t")
+    a.label("s2")
+    a.mov_dptr("t_storm")
+    a.label("store_t")                                  # XRAM 0xE8F:0xE90 = table address
+    a.b(0xAA, 0x83, 0xAB, 0x82)                          # MOV R2,DPH ; MOV R3,DPL
+    a.mov_dptr(0x0E8F); a.b(0xEA, 0xF0, 0xA3, 0xEB, 0xF0)
+    a.b(0xE4); a.mov_dptr(0x0E8D); a.b(0xF0)            # col = 0
+    a.label("col_loop")
+    a.b(0xE4); a.mov_dptr(0x0E8E); a.b(0xF0)            # row = 0
+    a.label("row_loop")
+    a.mov_dptr(0x0E8D); a.b(0xE0, 0x75, 0xF0, 0x06, 0xA4, 0xFF)   # R7 = col * 6
+    a.mov_dptr(0x0E8E); a.b(0xE0, 0x2F, 0xFF)                    # R7 += row
+    a.mov_dptr(0x0E8F); a.b(0xE0, 0xFA, 0xA3, 0xE0)              # R2 = table hi, A = table lo
+    a.b(0x2F, 0xF5, 0x82, 0xEA, 0x34, 0x00, 0xF5, 0x83)          # DPTR = table + R7
+    a.b(0xE4, 0x93, 0xFF)                                        # R7 = table[key]
+    a.mov_dptr(0x0E91); a.b(0xE0, 0x2F, 0x54, 0x7F)              # A = (phase + R7) & 127
+    a.b(0x75, 0xF0, 0x03, 0xA4)                                  # A,B = A * 3
+    a.b(0x24, 0x84, 0xF5, 0x82, 0xE5, 0xF0, 0x34, 0x34, 0xF5, 0x83)   # DPTR = 0x3484 + 3 * hue
+    a.b(0xE4, 0x93, 0xFD)                                        # R5 = red
+    a.b(0x74, 0x01, 0x93, 0xFE)                                  # R6 = green
+    a.b(0x74, 0x02, 0x93, 0xFC)                                  # R4 = blue
+    a.mov_dptr(0x0192); a.b(0xED, 0xF0)
+    a.mov_dptr(0x0000); a.b(0xEE, 0xF0)
+    a.b(0xEC); a.lcall(0x9749)                                   # brightness-scaled colour
+    a.mov_dptr(0x0E8D); a.b(0xE0, 0xFF)
+    a.mov_dptr(0x0E8E); a.b(0xE0, 0xFD)
+    a.lcall(0x7295)                                              # set key (R7 = col, R5 = row)
+    a.mov_dptr(0x0E8E); a.b(0xE0, 0x04, 0xF0)                    # row++
+    a.cjne_a(ROWS, "row_back")
+    a.mov_dptr(0x0E8D); a.b(0xE0, 0x04, 0xF0)                    # col++
+    a.cjne_a(COLS, "col_back")
+    a.b(0x22)                                                    # RET
+    a.label("row_back"); a.ljmp("row_loop")
+    a.label("col_back"); a.ljmp("col_loop")
+
+    a.label("t_wheel"); a.b(*wheel)
+    a.label("t_fall"); a.b(*fall)
+    a.label("t_storm"); a.b(*storm)
+    code = a.link()
+    return code, a.labels
+
+
+if __name__ == "__main__":
+    code, labels = build()
+    print(f"{len(code)} bytes at 0x{BASE:04X}, ends 0x{BASE + len(code):04X}")
+    print({k: hex(v) for k, v in labels.items() if not k[0] in "if" or k.endswith("sel")})
+    print(code.hex())

@@ -648,7 +648,7 @@ class App(tk.Tk):
         self.lkb_centers = self.lkb.centers()
         f.columnconfigure(0, minsize=120)
         f.columnconfigure(1, weight=1)
-        names = [k580.EFFECTS[h] for h in k580.SLOT_HW if h not in k580.UNSUPPORTED_EFFECTS] + ["OFF"]
+        names = k580.effect_names()          # widened once the custom firmware is seen
         self.effect = tk.StringVar()
         self.bright = tk.DoubleVar()
         self.speed = tk.DoubleVar()
@@ -658,10 +658,12 @@ class App(tk.Tk):
         ecell.grid(row=2, column=1, sticky="w", pady=(8, 0))
         erow = ttk.Frame(ecell)
         erow.pack(anchor="w")
-        ec = ttk.Combobox(erow, textvariable=self.effect, values=names, state="readonly", width=24)
+        ec = self.effect_combo = ttk.Combobox(erow, textvariable=self.effect, values=names, state="readonly",
+                                              width=24)
 
         def step(d):
             # previous / next effect, wrapping round
+            names = list(self.effect_combo.cget("values"))
             cur = names.index(self.effect.get()) if self.effect.get() in names else 0
             self.effect.set(names[(cur + d) % len(names)])
             self.apply_lighting(new_effect=True)
@@ -850,6 +852,7 @@ class App(tk.Tk):
             v = self.marker_variant() or "unknown"
         if v == "switch" and self.kb:
             self.ensure_fn_toggles()
+        self.effect_combo.config(values=k580.effect_names(v == "switch"))
         led = self.led or self.get_led()
         auto = self.kb and getattr(self, "_auto_installed", False)
         self.fw_state.config(text={"switch": "Custom firmware" + (" (Auto Wired Mode)"
@@ -1361,7 +1364,7 @@ class App(tk.Tk):
         self.layout_color_cell(hw == 21)
         name = k580.EFFECTS.get(hw, "OFF")
         note = "Changes apply instantly."
-        if hw in (3, 6, 15, 16, 17):
+        if hw in (3, 6, 15, 16, 17, 18):
             note += f" {name} uses its own rainbow colors."
         elif hw == 1:
             note += " Fixed on doesn't move, so it has no speed."

@@ -57,6 +57,33 @@ PATCH = [
     # 0F92: copy XRAM 0x37E -> 0x3BC and 0x37F -> 0x3BD ; LJMP 0x0FC4
     (0x0FC4, "f0e4a3f0a3f0", "9003b0" "02421f"),    # MOV DPTR,#0x3B0 (the replaced instruction) ; LJMP 0x421F
 ]
+# Effects the stock firmware lacks (Rainbow wheel 6, Colorful waterfall 0x10, Rotating storm 0x12),
+# built by tools/effects_asm.py into the never-erased, unused flash page at 0xEC00. Two LCALLs into the
+# effect switches (?C?CCASE at 0x62A9) go through our code first; the Fn effect key stops skipping them.
+EFFECTS_CODE = bytes.fromhex(
+    "b40602800db410028008b4120280030262a91581158130010dc201d202c24ac22de4900e91f0900dafe09037410223a7"
+    "b40602800db410028008b4120280030262a915811581900e92f0900932e0fea3e0ffc3900399e09f900398e09e500122"
+    "12ec660225dd900e91e004f0900e92e0b4060590ed0e800bb4100590ed8c800390ee0aaa83ab82900e8feaf0a3ebf0e4"
+    "900e8df0e4900e8ef0900e8de075f006a4ff900e8ee02fff900e8fe0faa3e02ff582ea3400f583e493ff900e91e02f54"
+    "7f75f003a42484f582e5f03434f583e493fd740193fe740293fc900192edf0900000eef0ec129749900e8de0ff900e8e"
+    "e0fd127295900e8ee004f0b4060a900e8de004f0b415042202ec9902ec944744413e3b384845413e3a374945423d3a36"
+    "4a46423d39354b47423d38344d49433c3632504b443b3430524d453a322d565147382e295b574d322824606060202020"
+    "6468720d171b696e780711166d727a050d1270747b040b1072767c03090d74787d02070b75797d02060a767a7d020509"
+    "777a7e010508787b7e0104070014283c50640014283c50640014283c50640014283c50640014283c50640014283c5064"
+    "0014283c50640014283c50640014283c50640014283c50640014283c50640014283c50640014283c50640014283c5064"
+    "0014283c50640014283c50640014283c50640014283c50640014283c50640014283c50640014283c5064130c07040303"
+    "0d06017d7b7c08007a767475037a736f6d6d7e746d6765667a6f66605d5f776b6058555775685b504d50756756474448"
+    "776a563b3a417c706525303c017a7b162a37080407162735100d101b2835171518202b371f1d20262f3a2625272d343e"
+    "2d2d2f333a433534363a40483c3b3d41464d434344474c53"
+)
+EFFECTS_PATCH = [
+    (0x2013, "1262a9", "12ec00"),   # effect changed: LCALL init_sel
+    (0x23BB, "1262a9", "12ec30"),  # every frame:    LCALL frame_sel
+    (0x6F14, "06", "fe"),                              # Fn effect cycle: stop skipping 6
+    (0x6F32, "10", "fe"),                              #                  stop skipping 0x10
+    (0x6F3D, "11", "12"),                              #                  last effect 0x11 -> 0x12
+    (0xEC00, "00" * len(EFFECTS_CODE), EFFECTS_CODE.hex()),
+]
 # Optional: switch to the cable whenever it's plugged in. The mode switch on the keyboard is read at
 # 0x84AB (pins P5.5 / P3.1, 10 samples each): 2.4G, Bluetooth or cable (XRAM 0x3AD = 1 / 2 / 0).
 # Bit 0x48 is set while the cable powers the keyboard (P3.4, debounced at 0x9EBE; it also drives the
@@ -73,7 +100,8 @@ AUTO_WIRED_SITE = (0x84AB, bytes.fromhex("020fa5"))
 BATTERY_BYTE = 0x1C               # lighting-block byte: battery % (0-100). Not measured on the cable (reads 0)
 # bytes that only the latest custom build has (fn 0x13 light toggle, battery copy)
 LATEST_SITES = [(0x37D3, bytes.fromhex("020f7c")), (0x421C, bytes.fromhex("020fb4")),
-                (0x0FC4, bytes.fromhex("9003b0"))]
+                (0x0FC4, bytes.fromhex("9003b0")),
+                (0x2013, bytes.fromhex("12ec00"))]
 BATTERY_RAW = 0x1D                # lighting-block bytes 0x1D-0x1E: raw battery reading, big-endian
 MEDIA_TOGGLE_KEY = "07000000"     # stock key function 0x00: toggle lighting byte 0x11
 WHEEL_TOGGLE_KEY = "07000013"     # patched key function 0x13: toggle lighting byte 0x30
@@ -130,7 +158,7 @@ def state(data):
 
 def apply(data, auto_wired=False):
     out = bytearray(data)
-    for addr, old, new in PATCH + (AUTO_WIRED_PATCH if auto_wired else []):
+    for addr, old, new in PATCH + EFFECTS_PATCH + (AUTO_WIRED_PATCH if auto_wired else []):
         o, n = bytes.fromhex(old), bytes.fromhex(new)
         if out[addr:addr + len(o)] != o:
             raise ValueError(f"unexpected bytes at 0x{addr:04X}")
