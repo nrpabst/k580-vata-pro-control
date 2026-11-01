@@ -852,9 +852,10 @@ class App(tk.Tk):
         self.side_mode = tk.StringVar()
         self.side_bright = tk.DoubleVar()
         self.side_speed = tk.DoubleVar()
-        sm = ttk.Combobox(sf, textvariable=self.side_mode, values=list(self.SIDE_MODES), state="readonly",
-                          width=22)
+        sm = ttk.Combobox(sf, textvariable=self.side_mode, values=self.side_mode_list(False),
+                          state="readonly", width=22)
         sm.pack(anchor="w")
+        self.side_combo = sm
         sm.bind("<<ComboboxSelected>>", lambda e: self.apply_side())
         for text, var in (("Brightness", self.side_bright), ("Speed", self.side_speed)):
             row = ttk.Frame(sf)
@@ -1016,6 +1017,7 @@ class App(tk.Tk):
             os.remove(self.EFFECTS_MARKER)
             self._effects_seen = has_effects = False
         self.effect_combo.config(values=k580.effect_names(has_effects))
+        self.side_combo.config(values=self.side_mode_list(has_effects))
         led = self.led or self.get_led()
         auto = self.kb and getattr(self, "_auto_installed", False)
         self.fw_state.config(text={"switch": "Custom firmware" + (" (Auto Wired Mode)"
@@ -1466,6 +1468,10 @@ class App(tk.Tk):
     SIDE_MODES = {"Off": 0, "Match": 12, "RGB": 1, "Rainbow cycle": 2, "White": 3, "Red": 4, "Yellow": 5,
                   "Orange": 6, "Green": 7, "Cyan": 8, "Blue": 9, "Magenta": 10, "Colour breathing": 11}
     SIDE_MODE, SIDE_BRIGHT, SIDE_SPEED = 0x12, 0x14, 0x15
+
+    def side_mode_list(self, custom):
+        """Side-light modes to offer: Match only with the custom firmware (stock ignores mode 12)."""
+        return [m for m, v in self.SIDE_MODES.items() if custom or v != 12]
 
     def show_side(self):
         names = {v: k for k, v in self.SIDE_MODES.items()}
