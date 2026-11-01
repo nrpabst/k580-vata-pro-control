@@ -4,6 +4,8 @@ Uses k580.py (wired vendor HID channel). Run with:  pythonw k580_app.py
 Changes are written to the keyboard immediately and stored on it.
 """
 import colorsys
+import ctypes
+from ctypes import wintypes
 import json
 import math
 import os
@@ -565,7 +567,7 @@ class App(tk.Tk):
         super().__init__()
         self.title("K580 Control")
         self.geometry("660x1000")
-        self.minsize(640, 520)                       # the pages are laid out for this width
+        self.minsize(640, 520)                       # raised to fit the pages by fit_window()
         self.kb = None
         self.wl = None
         self.led = None
@@ -606,6 +608,7 @@ class App(tk.Tk):
                 self.geometry(self.prefs["geometry"])
             except tk.TclError:
                 pass
+        self.after(300, self.fit_window)             # once the window is on screen and measurable
         self.iconbitmap(default=k580_tray.icon_path())
         self.tray = k580_tray.Tray()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -614,6 +617,31 @@ class App(tk.Tk):
         self.after(500, self.animate_preview)
         if "--tray" in sys.argv:
             self.withdraw()
+
+    def fit_window(self):
+        """Never narrower than the widest page plus its scrollbar, so nothing is cut off on the right,
+        and at least tall enough for the Lighting page when the screen has room."""
+        widest = max(i.winfo_reqwidth() for _o, _c, i in self.pages)
+        bar = ttk.Scrollbar(self).winfo_reqwidth()
+        outer = self.nametowidget(self.nb.select())
+        if outer.winfo_width() < 50:                         # not laid out yet
+            self.after(300, self.fit_window)
+            return
+        side = self.winfo_width() - outer.winfo_width()      # notebook padding and borders
+        need_w = widest + bar + side
+        self.minsize(need_w, 520)
+        _o, canvas, inner = self.pages[0]                       # Lighting
+        need_h = self.winfo_height() + inner.winfo_reqheight() - canvas.winfo_height()
+        w, h = max(self.winfo_width(), need_w), self.winfo_height()
+        x, y = self.winfo_x(), self.winfo_y()
+        if h < need_h:
+            rect = wintypes.RECT()                              # the screen minus the taskbar
+            ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(rect), 0)  # SPI_GETWORKAREA
+            title = self.winfo_rooty() - y                      # title bar height
+            h = min(need_h, rect.bottom - rect.top - title - 8)
+            y = max(rect.top, min(y, rect.bottom - h - title - 8))
+        if (w, h, y) != (self.winfo_width(), self.winfo_height(), self.winfo_y()):
+            self.geometry(f"{w}x{h}+{x}+{y}")
 
     def remember_geometry(self):
         if self.state() == "normal":
@@ -1576,6 +1604,9 @@ class App(tk.Tk):
         win = canvas.create_window(0, 0, window=inner, anchor="nw")
         canvas.configure(yscrollcommand=bar.set)
         canvas.pack(side="left", fill="both", expand=True)
+        if not hasattr(self, "pages"):
+            self.pages = []
+        self.pages.append((outer, canvas, inner))
 
         def fit(_e=None):
             canvas.configure(scrollregion=(0, 0, inner.winfo_reqwidth(), inner.winfo_reqheight()))
