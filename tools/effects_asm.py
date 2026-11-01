@@ -21,10 +21,11 @@ import math
 BASE = 0xEC00
 OURS = (0x06, 0x10, 0x12)            # Rainbow wheel, Colorful waterfall, Rotating storm
 COLS, ROWS = 21, 6
-DARK_KEYS = {6}                      # G1's grid spot: stock effects leave it dark
+DARK_KEYS = {6,                      # G1's grid spot: stock effects leave it dark
+             102, 108, 114, 120}     # status lights above the numpad: dark unless their lock is on
+                                     # (skipping them left the last effect's colour lit)
 OFF = 0xFF                           # table value: draw this key black
 SKIP_KEYS = {77, 88, 113, 125,       # volume/brightness key + media keys: their own lights, leave alone
-             102, 108, 114, 120,   # status lights above the numpad (Caps Lock etc.)
              70, 75, 76, 87, 93, 99, 100, 123,   # grid spots with no key
              23, 29, 41, 47, 71}   # side light strips: the firmware drives the 8 spots listed at 0x3758
                                    # (23 29 41 47 71 77 113 125), which share the G2-G5/knob/media spots
@@ -100,7 +101,7 @@ def tables():
             idx = c * ROWS + r
             special = SKIP if idx in SKIP_KEYS else OFF if idx in DARK_KEYS else None
             wheel.append(special or int(ang * 128) & 0x7F)
-            fall.append(special or (r * 20) & 0x7F)
+            fall.append(special or (-r * 20) & 0x7F)       # colours move down the rows
             storm.append(special or int(ang * 128 + rad * 7) & 0x7F)
     return wheel, fall, storm
 
