@@ -537,7 +537,7 @@ class App(tk.Tk):
         "time, instead of them only flashing when pressed. You turn them on or off on the\n"
         "Lighting page or with Fn + Play/Pause and Fn + the volume/brightness key. It also lets\n"
         "the app show your battery level.\n\n"
-        "Installing takes about a minute. Plug in the cable and switch wireless off first.\n"
+        "Installing takes about 15 seconds. Plug in the cable and switch wireless off first.\n"
         "Your settings are kept, and Uninstall puts the original firmware back.")
 
     def build_firmware(self, nb):
@@ -756,11 +756,14 @@ class App(tk.Tk):
         if removing and not os.path.exists(own_original):
             messagebox.showerror("K580", "Your original firmware backup (backups\\my-original-firmware.hex) is missing.")
             return
+        first_time = not removing and not os.path.exists(own_original)
         if not messagebox.askyesno(
-                "K580", ("This puts your original firmware back" if removing else
+                "K580", ("This puts your original firmware back (about 15 seconds)" if removing else
                          "This reads your keyboard's firmware, checks it's the exact version the patch is for,\n"
-                         "saves an untouched copy for undo, and installs the patched version")
-                + " (about a minute).\n\nKeep the cable plugged in until it says Done. Continue?"
+                         "saves an untouched copy for undo, and installs the patched version (about 30 seconds)"
+                         if first_time else
+                         "This installs the latest custom firmware (about 15 seconds)")
+                + ".\n\nKeep the cable plugged in until it says Done. Continue?"
                 + ("" if removing else "\n\nAuto Wired Mode: "
                    + ("on" if self.auto_wired.get() else "off"))):
             return
