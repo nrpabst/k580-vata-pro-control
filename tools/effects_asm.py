@@ -21,11 +21,13 @@ import math
 BASE = 0xEC00
 OURS = (0x06, 0x10, 0x12)            # Rainbow wheel, Colorful waterfall, Rotating storm
 COLS, ROWS = 21, 6
-DARK_KEYS = {6, 23, 29, 41, 47}      # G1-G5 (matrix index = col * 6 + row): stock effects leave them dark
+DARK_KEYS = {6}                      # G1's grid spot: stock effects leave it dark
 OFF = 0xFF                           # table value: draw this key black
 SKIP_KEYS = {77, 88, 113, 125,       # volume/brightness key + media keys: their own lights, leave alone
              102, 108, 114, 120,   # status lights above the numpad (Caps Lock etc.)
-             70, 75, 76, 87, 93, 99, 100, 123}   # grid spots with no key: the side light strips
+             70, 75, 76, 87, 93, 99, 100, 123,   # grid spots with no key
+             23, 29, 41, 47, 71}   # side light strips: the firmware drives the 8 spots listed at 0x3758
+                                   # (23 29 41 47 71 77 113 125), which share the G2-G5/knob/media spots
 SKIP = 0xFE                          # table value: don't touch this key
 
 
