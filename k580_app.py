@@ -281,11 +281,14 @@ def effect_slot(hw):
 class KeyboardView(tk.Canvas):
     """Clickable picture of the K580. Keys can be selected, filled with a colour, or marked."""
 
-    SCALE = 0.72
+    SCALE = 0.80                     # fills the window width
     SHORT = {"Backspace": "Bksp", "CapsLock": "Caps", "LShift": "Shift", "RShift": "Shift",
              "LCtrl": "Ctrl", "RCtrl": "Ctrl", "Insert": "Ins", "Delete": "Del", "NumLock": "NmLk",
              "NumEnter": "Ent", "Space": "Space", "Media1": "Prev", "Media2": "Play", "Media3": "Next",
              "K105": "Mode", "K114": "Wheel"}
+    # numpad keys: drop the "Num" so the label fits the key
+    SHORT.update({f"Num{c}": c for c in "0123456789/*-+."})
+    SHORT.update({"NumEnter": "Enter", "NumLock": "Lock"})
 
     def __init__(self, master, on_click, labels=True):
         import k580_layout
@@ -312,9 +315,9 @@ class KeyboardView(tk.Canvas):
             name = k580.KEY_NAMES.get(idx, "")
             name = self.SHORT.get(name, name)
             if labels:
-                t = self.create_text((x1 + x2) / 2 * s, ((y1 + y2) / 2 - 45) * s,
-                                     text=name if len(name) <= 5 else "", fill=k580_theme.MUTED,
-                                     font=("Segoe UI", 6))
+                text = name if len(name) <= 5 else ""
+                t = self.create_text((x1 + x2) / 2 * s, ((y1 + y2) / 2 - 45) * s, text=text,
+                                     fill=k580_theme.MUTED, font=self.label_font(text, x2 - x1))
                 self.texts[idx] = t
                 items.append(t)
             for it in items:
@@ -337,11 +340,17 @@ class KeyboardView(tk.Canvas):
         w, h = int(self.cget("width")), int(self.cget("height"))
         return {i: ((b[0] + b[2]) / 2 / w, (b[1] + b[3]) / 2 / h) for i, b in boxes.items()}
 
+    def label_font(self, text, key_width):
+        """Smaller type for long labels on 1-wide keys, so they stay inside the key."""
+        wide = key_width > 50
+        return ("Segoe UI", 7 if len(text) <= 3 or wide else 6)
+
     def set_labels(self, labels, highlight=()):
         """Replace key labels ({idx: text}); keys in `highlight` are drawn brighter."""
         for idx, t in self.texts.items():
             if idx in labels:
-                self.itemconfig(t, text=labels[idx],
+                x1, _, x2, _ = self.coords(self.rects[idx])
+                self.itemconfig(t, text=labels[idx], font=self.label_font(labels[idx], (x2 - x1) / self.SCALE),
                                 fill=k580_theme.FG if idx in highlight else k580_theme.MUTED)
 
     def set_fills(self, fills):
