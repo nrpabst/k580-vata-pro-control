@@ -571,7 +571,7 @@ class App(tk.Tk):
         style = k580_theme.apply(self)
 
         k580_theme.RGBHeader(self, style).pack(fill="x")
-        top = ttk.Frame(self, padding=(18, 6, 12, 2), style="Header.TFrame")
+        top = ttk.Frame(self, padding=(18, 10, 20, 6), style="Header.TFrame")
         top.pack(fill="x")
         self.status = ttk.Label(top, text="Not connected", style="Header.TLabel")
         self.status.pack(side="left")
