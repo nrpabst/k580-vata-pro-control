@@ -2159,40 +2159,20 @@ class App(tk.Tk):
 
     # ---------------- profiles
     def build_profiles(self, nb):
-        f = self.page(nb, "Profiles", 14)
-        f.columnconfigure(0, weight=1)
-        ttk.Label(f, text="Profiles", font=k580_theme.FONT_BOLD).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(f, text="A profile holds everything you set up: lighting and colours (key colours and side\n"
-                          "lights too), all 4 key layers, macros, G-key recordings and keyboard settings.\n"
-                          "Saving and loading need the USB cable.",
-                  style="Muted.TLabel", justify="left").grid(row=1, column=0, columnspan=2, sticky="w",
-                                                             pady=(4, 12))
-        self.plist = tk.Listbox(f, height=12, width=40, activestyle="none", exportselection=False)
-        k580_theme.style_listbox(self.plist)
-        self.plist.grid(row=2, column=0, sticky="nsew")
-        self.plist.bind("<<ListboxSelect>>", lambda e: self.profile_selected())
-        self.plist.bind("<Double-Button-1>", lambda e: self.load_profile())
-        acts = ttk.Frame(f)
-        acts.grid(row=2, column=1, sticky="n", padx=(12, 0))
-        for text, cmd, style in (("Load", self.load_profile, "Accent.TButton"),
-                                 ("Save keyboard to it", self.update_profile, "TButton"),
-                                 ("Rename", self.rename_profile, "TButton"),
-                                 ("Delete", self.delete_profile, "TButton")):
-            ttk.Button(acts, text=text, command=cmd, style=style, width=20).pack(fill="x", pady=(0, 8))
-        new = ttk.Frame(f)
-        new.grid(row=3, column=0, columnspan=2, sticky="w", pady=(16, 0))
-        ttk.Label(new, text="Name").pack(side="left")
-        self.pname = tk.StringVar()
-        e = ttk.Entry(new, textvariable=self.pname, width=26)
-        e.pack(side="left", padx=8)
-        e.bind("<Return>", lambda ev: self.new_profile())
-        ttk.Button(new, text="Save keyboard as new profile", command=self.new_profile).pack(side="left")
-        self.pnote = ttk.Label(f, text="", style="Muted.TLabel")
-        self.pnote.grid(row=4, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        import k580_profiles
+        self.profiles = {}
+        self.ppage = k580_profiles.ProfilesPage(self, self.page(nb, "Profiles", 14))
         self.after_idle(self.refresh_profiles)
+
+    def side_mode_names(self):
+        return {v: k for k, v in self.SIDE_MODES.items()}
 
     def profile_files(self):
         """{name: path} of the saved profiles, sorted by name."""
+        return {name: path for name, (path, _data) in self.read_profiles().items()}
+
+    def read_profiles(self):
+        """{name: (path, data)} of the saved profiles, sorted by name."""
         out = {}
         if os.path.isdir(PROFILES):
             for fn in os.listdir(PROFILES):
@@ -2200,34 +2180,17 @@ class App(tk.Tk):
                     path = os.path.join(PROFILES, fn)
                     try:
                         with open(path) as fh:
-                            out[json.load(fh).get("name") or fn[:-5]] = path
+                            data = json.load(fh)
+                        out[data.get("name") or fn[:-5]] = (path, data)
                     except (OSError, ValueError):
                         pass
         return dict(sorted(out.items(), key=lambda kv: kv[0].lower()))
 
-    def refresh_profiles(self, select=None):
-        active = getattr(self, "prefs", {}).get("profile")
-        self.profiles = self.profile_files()
-        names = list(self.profiles)
-        self.plist.delete(0, "end")
-        for n in names:
-            self.plist.insert("end", ("\u25cf  " if n == active else "     ") + n)
-        pick = select if select in names else active if active in names else None
-        if pick:
-            self.plist.selection_set(names.index(pick))
-            self.plist.see(names.index(pick))
-        self.pnote.config(text=f"Active profile: {active}" if active in names else
-                          "No profiles yet: type a name above and save the keyboard as it is now."
-                          if not names else "")
-
-    def selected_profile(self):
-        sel = self.plist.curselection()
-        return list(self.profiles)[sel[0]] if sel else None
-
-    def profile_selected(self):
-        name = self.selected_profile()
-        if name:
-            self.pname.set(name)
+    def refresh_profiles(self):
+        found = self.read_profiles()
+        self.profiles = {name: path for name, (path, _data) in found.items()}
+        self.ppage.render({name: data for name, (_path, data) in found.items()},
+                          getattr(self, "prefs", {}).get("profile"))
 
     def read_profile(self, name):
         """Everything a profile holds, read from the keyboard."""
@@ -2262,34 +2225,24 @@ class App(tk.Tk):
         finally:
             self.config(cursor="")
 
-    def new_profile(self):
-        name = self.pname.get().strip()
-        if not name:
-            messagebox.showinfo("K580", "Type a name for the new profile first.")
-            return
-        if name in self.profiles:
-            messagebox.showinfo("K580", f"There's already a profile called {name}. Pick it and use "
-                                        "Save keyboard to it to update it, or choose another name.")
-            return
+    def new_profile(self, name):
         if not self.need_kb():
             return
         self.busy(lambda: self.write_profile_file(name))
         self.set_active_profile(name)
-        self.refresh_profiles(select=name)
+        self.refresh_profiles()
 
-    def update_profile(self):
-        name = self.selected_profile()
-        if not name or not self.need_kb():
+    def update_profile(self, name):
+        if not self.need_kb():
             return
         if not messagebox.askyesno("K580", f"Replace profile {name} with the keyboard's current setup?"):
             return
         self.busy(lambda: self.write_profile_file(name, self.profiles[name]))
         self.set_active_profile(name)
-        self.refresh_profiles(select=name)
+        self.refresh_profiles()
 
-    def load_profile(self):
-        name = self.selected_profile()
-        if not name or not self.need_kb():
+    def load_profile(self, name):
+        if not self.need_kb():
             return
         with open(self.profiles[name]) as fh:
             data = json.load(fh)
@@ -2310,21 +2263,12 @@ class App(tk.Tk):
             time.sleep(0.2)
         self.busy(work)
         self.set_active_profile(name)
-        self.refresh_profiles(select=name)
+        self.refresh_profiles()
         self.load_lighting()
         self.load_colors()
         self.load_macros()
 
-    def rename_profile(self):
-        name, new = self.selected_profile(), self.pname.get().strip()
-        if not name:
-            return
-        if not new or new == name:
-            messagebox.showinfo("K580", "Type the new name in the Name box, then press Rename.")
-            return
-        if new in self.profiles:
-            messagebox.showinfo("K580", f"There's already a profile called {new}.")
-            return
+    def rename_profile(self, name, new):
         path = self.profiles[name]
         with open(path) as fh:
             data = json.load(fh)
@@ -2333,18 +2277,15 @@ class App(tk.Tk):
             json.dump(data, fh, indent=1)
         if self.prefs.get("profile") == name:
             self.set_active_profile(new)
-        self.refresh_profiles(select=new)
+        self.refresh_profiles()
 
-    def delete_profile(self):
-        name = self.selected_profile()
-        if not name or not messagebox.askyesno("K580", f"Delete profile {name}? The keyboard keeps its "
-                                                        "current setup."):
+    def delete_profile(self, name):
+        if not messagebox.askyesno("K580", f"Delete profile {name}? The keyboard keeps its current setup."):
             return
         os.remove(self.profiles[name])
         if self.prefs.get("profile") == name:
             self.prefs.pop("profile", None)
             save_prefs(self.prefs)
-        self.pname.set("")
         self.refresh_profiles()
 
     # ---------------- settings page
