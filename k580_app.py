@@ -564,8 +564,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("K580 Control")
-        self.geometry("640x960")
-        self.resizable(False, False)
+        self.geometry("660x1000")
+        self.minsize(640, 520)                       # the pages are laid out for this width
         self.kb = None
         self.wl = None
         self.led = None
@@ -601,6 +601,11 @@ class App(tk.Tk):
 
         # system tray: closing the window hides it; the tray icon brings it back or quits
         self.prefs = load_prefs()
+        if self.prefs.get("geometry"):              # reopen at the size/position it was left
+            try:
+                self.geometry(self.prefs["geometry"])
+            except tk.TclError:
+                pass
         self.iconbitmap(default=k580_tray.icon_path())
         self.tray = k580_tray.Tray()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -610,7 +615,13 @@ class App(tk.Tk):
         if "--tray" in sys.argv:
             self.withdraw()
 
+    def remember_geometry(self):
+        if self.state() == "normal":
+            self.prefs["geometry"] = self.geometry()
+            save_prefs(self.prefs)
+
     def on_close(self):
+        self.remember_geometry()
         if self.prefs.get("close_to_tray", True):
             self.withdraw()
             if not self.prefs.get("tray_hint_shown"):
@@ -644,6 +655,10 @@ class App(tk.Tk):
         self.after(200, self.poll_tray)
 
     def quit_app(self):
+        try:
+            self.remember_geometry()
+        except Exception:
+            pass
         self.tray.close()
         for dev in (self.kb, self.wl):
             if dev:
@@ -799,7 +814,7 @@ class App(tk.Tk):
             row = ttk.Frame(sf)
             row.pack(anchor="w", pady=(6, 0))
             ttk.Label(row, text=text, width=9).pack(side="left")
-            self.snap_slider(row, var, length=170, on_done=self.apply_side).pack(side="left")
+            self.snap_slider(row, var, length=150, on_done=self.apply_side).pack(side="left")
 
     def preview_clicked(self, idx):
         """Self-define: clicking keys selects them for painting. Otherwise the keyboard is only a
@@ -867,8 +882,7 @@ class App(tk.Tk):
         "Your settings are kept, and Uninstall puts the original firmware back.")
 
     def build_firmware(self, nb):
-        f = ttk.Frame(nb, padding=12)
-        nb.add(f, text="Firmware")
+        f = self.page(nb, "Firmware", 12)
         ttk.Label(f, text=self.FIRMWARE_NOTE, justify="left").grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(f, text="Installed now:").grid(row=1, column=0, sticky="w", pady=(14, 8))
         self.fw_state = ttk.Label(f, text="(connect the cable to check)")
@@ -1552,13 +1566,42 @@ class App(tk.Tk):
             self.color.set(k580.COLORS[b & 7])
 
     # ---------------- keys
+    def page(self, nb, title, padding):
+        """A notebook page that scrolls vertically when the window is shorter than its content."""
+        outer = ttk.Frame(nb)
+        nb.add(outer, text=title)
+        canvas = tk.Canvas(outer, bg=k580_theme.PANEL, highlightthickness=0)
+        bar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        inner = ttk.Frame(canvas, padding=padding)
+        win = canvas.create_window(0, 0, window=inner, anchor="nw")
+        canvas.configure(yscrollcommand=bar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+
+        def fit(_e=None):
+            canvas.configure(scrollregion=(0, 0, inner.winfo_reqwidth(), inner.winfo_reqheight()))
+            canvas.itemconfigure(win, width=max(canvas.winfo_width(), inner.winfo_reqwidth()))
+            if inner.winfo_reqheight() > canvas.winfo_height():   # scrollbar only when needed
+                if not bar.winfo_ismapped():
+                    bar.pack(side="right", fill="y")
+            elif bar.winfo_ismapped():
+                bar.pack_forget()
+                canvas.yview_moveto(0)
+        inner.bind("<Configure>", fit)
+        canvas.bind("<Configure>", fit)
+
+        def wheel(e):
+            if bar.winfo_ismapped():
+                canvas.yview_scroll(int(-e.delta / 120), "units")
+        outer.bind("<Enter>", lambda e: self.bind_all("<MouseWheel>", wheel))
+        outer.bind("<Leave>", lambda e: self.unbind_all("<MouseWheel>"))
+        return inner
+
     KB_PAD = 10                          # Lighting, Keys and Macros share this keyboard placement
 
     def keyboard_page(self, nb, title, on_click, hint):
         """A page with the clickable keyboard at the top and a hint line under it, laid out the same
         on every page that has one."""
-        f = ttk.Frame(nb, padding=self.KB_PAD)
-        nb.add(f, text=title)
+        f = self.page(nb, title, self.KB_PAD)
         kb = KeyboardView(f, on_click=on_click)
         kb.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 6))
         info = ttk.Label(f, text=hint, style="Muted.TLabel")
@@ -2075,8 +2118,7 @@ class App(tk.Tk):
     RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
     def build_settings(self, nb):
-        f = ttk.Frame(nb, padding=14)
-        nb.add(f, text="Settings")
+        f = self.page(nb, "Settings", 14)
         f.columnconfigure(1, weight=1)
         row = 0
 
