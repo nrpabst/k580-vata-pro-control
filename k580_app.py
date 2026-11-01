@@ -1273,10 +1273,15 @@ class App(tk.Tk):
         self.load_settings()
 
     def show_battery(self, led):
-        """Latest custom firmware copies the battery % into a lighting byte."""
+        """Latest custom firmware copies the battery level into lighting bytes. The % is worked out
+        from the raw reading with the firmware's own formula (0 % at 0x2CB, +10 % per 0x16), because
+        the keyboard's smoothed % only creeps up 1 % at a time after the cable comes out."""
         import k580_patch
         v = self.firmware_variant() if self.kb else self.marker_variant()
         pct = led[k580_patch.BATTERY_BYTE]
+        raw = (led[k580_patch.BATTERY_RAW] << 8) | led[k580_patch.BATTERY_RAW + 1]
+        if 0x100 < raw < 0x600:                     # a real reading (the cable reports 3)
+            pct = max(0, min(100, round((raw - 0x2CB) * 10 / 0x16)))
         if v != "switch":
             text = ""
         elif self.kb:                       # on the cable it charges and isn't measured
