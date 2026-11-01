@@ -627,6 +627,8 @@ class App(tk.Tk):
         self.after(200, self.poll_tray)
         self.after(1000, self.poll_lighting)
         self.after(500, self.animate_preview)
+        self.auto_update_job = None
+        self.after(15000, self.auto_update_check)       # once the app has settled
         if "--tray" in sys.argv:
             self.withdraw()
 
@@ -2448,6 +2450,13 @@ class App(tk.Tk):
              "Click the tray icon to open it again; right-click it to quit.")
         line("Updates", ttk.Button(f, text="Check for updates", command=self.check_updates),
              f"You have version {APP_VERSION}. Checks the project's GitHub page for a newer one.")
+        self.auto_update = tk.BooleanVar(value=load_prefs().get("auto_update", False) and FROZEN)
+        au = ttk.Checkbutton(f, variable=self.auto_update, command=self.set_auto_update,
+                             state="normal" if FROZEN else "disabled")
+        line("Automatic updates", au,
+             "When a new version is published on GitHub, download and install it by itself (checked\n"
+             "when the app starts and once a day). The app restarts on the new version."
+             if FROZEN else "Only in the installed app. Running from source, update with git pull instead.")
 
         section("Backup and reset")
         bk = ttk.Frame(f)
@@ -2511,24 +2520,106 @@ class App(tk.Tk):
                 except OSError:
                     pass
 
-    def check_updates(self):
+    # ---------------- updates
+    @staticmethod
+    def latest_release():
+        """(version, installer asset or None) of the newest GitHub release."""
         import urllib.request
+        with urllib.request.urlopen(UPDATE_URL, timeout=8) as r:
+            rel = json.load(r)
+        setup = next((a for a in rel.get("assets", []) if a.get("name", "").startswith("K580-Control-Setup")
+                      and a["name"].endswith(".exe")), None)
+        return rel.get("tag_name", "").lstrip("v"), setup
+
+    @staticmethod
+    def newer(version):
+        def ver(s):
+            return tuple(int(x) for x in s.split(".") if x.isdigit())
+        return bool(version) and ver(version) > ver(APP_VERSION)
+
+    @staticmethod
+    def download_setup(asset):
+        """Download the installer to the temp folder; checks its size and, when GitHub gives one,
+        its SHA-256. Returns the file's path."""
+        import hashlib
+        import tempfile
+        import urllib.request
+        path = os.path.join(tempfile.gettempdir(), asset["name"])
+        with urllib.request.urlopen(asset["browser_download_url"], timeout=60) as r:
+            data = r.read()
+        if len(data) != asset.get("size", len(data)):
+            raise OSError("the download was incomplete")
+        digest = asset.get("digest") or ""
+        if digest.startswith("sha256:") and hashlib.sha256(data).hexdigest() != digest[7:].lower():
+            raise OSError("the download didn't match GitHub's checksum")
+        with open(path, "wb") as fh:
+            fh.write(data)
+        return path
+
+    def run_setup(self, path):
+        """Install silently; the installer closes this app, replaces it and starts the new version."""
+        import subprocess
+        subprocess.Popen([path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/update=1"],
+                         close_fds=True)
+        self.after(500, self.quit_app)
+
+    def set_auto_update(self):
+        self.prefs["auto_update"] = bool(self.auto_update.get())
+        save_prefs(self.prefs)
+        if self.auto_update.get():
+            self.auto_update_check()
+
+    def auto_update_check(self):
+        """In the background: if automatic updates are on and a newer installer is published, get it
+        and install it. Runs at start-up and then once a day."""
+        if self.auto_update_job:
+            self.after_cancel(self.auto_update_job)
+        self.auto_update_job = self.after(24 * 3600 * 1000, self.auto_update_check)
+        if not (FROZEN and self.prefs.get("auto_update")):
+            return
+        result = {}
+
+        def work():
+            try:
+                version, setup = self.latest_release()
+                if self.newer(version) and setup:
+                    result["path"] = self.download_setup(setup)
+            except Exception:
+                pass                                 # offline etc.: try again tomorrow
+            result["done"] = True
+
+        def done():
+            if "done" not in result:
+                self.after(1000, done)
+            elif "path" in result:
+                self.run_setup(result["path"])
+        threading.Thread(target=work, daemon=True).start()
+        self.after(1000, done)
+
+    def check_updates(self):
         try:
-            with urllib.request.urlopen(UPDATE_URL, timeout=8) as r:
-                latest = json.load(r).get("tag_name", "").lstrip("v")
+            latest, setup = self.latest_release()
         except Exception:
             messagebox.showinfo("K580", "Couldn't reach GitHub, or no releases have been published yet.")
             return
-
-        def ver(s):
-            return tuple(int(x) for x in s.split(".") if x.isdigit())
-        if latest and ver(latest) > ver(APP_VERSION):
-            if messagebox.askyesno("K580", f"Version {latest} is available (you have {APP_VERSION}).\n"
-                                           "Open the download page?"):
-                import webbrowser
-                webbrowser.open(RELEASES_PAGE)
-        else:
+        if not self.newer(latest):
             messagebox.showinfo("K580", f"You're up to date ({APP_VERSION}).")
+        elif FROZEN and setup:
+            if messagebox.askyesno("K580", f"Version {latest} is available (you have {APP_VERSION}).\n"
+                                           "Install it now? The app restarts on the new version."):
+                self.config(cursor="watch")
+                self.update()
+                try:
+                    path = self.download_setup(setup)
+                except Exception as e:
+                    self.config(cursor="")
+                    messagebox.showerror("K580", f"Couldn't download the update: {e}")
+                    return
+                self.run_setup(path)
+        elif messagebox.askyesno("K580", f"Version {latest} is available (you have {APP_VERSION}).\n"
+                                         "Open the download page?"):
+            import webbrowser
+            webbrowser.open(RELEASES_PAGE)
 
     def factory_reset(self):
         """Rebooting through the ISP bootloader makes the firmware restore its factory settings."""

@@ -48,12 +48,19 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\K580 Control.exe"; Description: "Open K580 Control now"; Flags: nowait postinstall skipifsilent
+; an automatic update (the app runs this installer silently with /update=1): start the new version
+Filename: "{app}\K580 Control.exe"; Flags: nowait; Check: IsAutoUpdate
 
 [UninstallRun]
 ; the app keeps running in the tray; close it so its file can be removed
 Filename: "{sys}\taskkill.exe"; Parameters: "/f /im ""K580 Control.exe"""; Flags: runhidden; RunOnceId: "CloseApp"
 
 [Code]
+function IsAutoUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:update|0}') = '1';
+end;
+
 // the app's own Start with Windows setting may have added the startup entry even if the installer's
 // task was off: remove it on uninstall either way
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
