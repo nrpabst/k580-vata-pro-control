@@ -84,6 +84,14 @@ EFFECTS_PATCH = [
     (0x6F3D, "11", "12"),                              #                  last effect 0x11 -> 0x12
     (0xEC00, "00" * len(EFFECTS_CODE), EFFECTS_CODE.hex()),
 ]
+# Record key fix: pressing record and then record again without choosing a G key marked the G key
+# the slot pointer last held (G1 by default) as recorded, so it lit up with nothing saved, until a
+# restart. The stop routine (0x3BC0) now only marks the slot if a G key was chosen (bit 0x1E).
+RECORD_FIX_PATCH = [
+    (0x3BC2, "d21dc205", "02eea000"),               # LJMP 0xEEA0 ; NOP  (was SETB 0x1D ; CLR 0x05)
+    (0xEEA0, "00" * 11, "301e07" "d21d" "c205" "023bc6" "22"),
+    # EEA0: JNB 0x1E,cancel ; SETB 0x1D ; CLR 0x05 ; LJMP 0x3BC6     EEAA: cancel: RET
+]
 # Optional: switch to the cable whenever it's plugged in. The mode switch on the keyboard is read at
 # 0x84AB (pins P5.5 / P3.1, 10 samples each): 2.4G, Bluetooth or cable (XRAM 0x3AD = 1 / 2 / 0).
 # Bit 0x48 is set while the cable powers the keyboard (P3.4, debounced at 0x9EBE; it also drives the
@@ -101,7 +109,7 @@ BATTERY_BYTE = 0x1C               # lighting-block byte: battery % (0-100). Not 
 # bytes that only the latest custom build has (fn 0x13 light toggle, battery copy)
 LATEST_SITES = [(0x37D3, bytes.fromhex("020f7c")), (0x421C, bytes.fromhex("020fb4")),
                 (0x0FC4, bytes.fromhex("9003b0")),
-                (0x2013, bytes.fromhex("12ec00"))]
+                (0x2013, bytes.fromhex("12ec00")), (0x3BC2, bytes.fromhex("02eea0"))]
 BATTERY_RAW = 0x1D                # lighting-block bytes 0x1D-0x1E: raw battery reading, big-endian
 MEDIA_TOGGLE_KEY = "07000000"     # stock key function 0x00: toggle lighting byte 0x11
 WHEEL_TOGGLE_KEY = "07000013"     # patched key function 0x13: toggle lighting byte 0x30
@@ -158,7 +166,7 @@ def state(data):
 
 def apply(data, auto_wired=False):
     out = bytearray(data)
-    for addr, old, new in PATCH + EFFECTS_PATCH + (AUTO_WIRED_PATCH if auto_wired else []):
+    for addr, old, new in PATCH + EFFECTS_PATCH + RECORD_FIX_PATCH + (AUTO_WIRED_PATCH if auto_wired else []):
         o, n = bytes.fromhex(old), bytes.fromhex(new)
         if out[addr:addr + len(o)] != o:
             raise ValueError(f"unexpected bytes at 0x{addr:04X}")
