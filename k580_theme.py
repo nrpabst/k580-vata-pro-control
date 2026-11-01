@@ -99,7 +99,30 @@ def apply(root):
     root.option_add("*TCombobox*Listbox.selectForeground", FG)
     root.option_add("*TCombobox*Listbox.font", FONT)
     root.option_add("*TCombobox*Listbox.borderWidth", 0)
+    accent_styles(st)
     return st
+
+
+HUES = 64                # steps of the RGB accent cycle
+
+
+def accent_styles(st):
+    """One style per accent hue, made once. Re-configuring a ttk style makes Tk re-lay out every ttk
+    widget in the window, so the animation switches each accented widget to the next ready-made style
+    instead (only that widget redraws)."""
+    st.configure("AccentText.TButton")
+    for i in range(HUES):
+        accent = hue_hex(i / HUES, 0.65, 1.0)
+        st.configure(f"H{i}.Accent.TButton", background=accent, lightcolor=accent, darkcolor=accent,
+                     bordercolor=accent)
+        st.map(f"H{i}.Accent.TButton", background=[("active", hue_hex(i / HUES, 0.45, 1.0)),
+                                                   ("disabled", PANEL)],
+               foreground=[("disabled", "#4b5063")], bordercolor=[("disabled", BORDER)],
+               lightcolor=[("disabled", PANEL)], darkcolor=[("disabled", PANEL)])
+        st.configure(f"H{i}.AccentText.TButton", foreground=accent)
+        st.configure(f"H{i}.TNotebook")
+        st.map(f"H{i}.TNotebook.Tab", foreground=[("selected", accent), ("active", FG)],
+               background=[("selected", PANEL), ("active", FIELD)])
 
 
 def style_listbox(widget):
@@ -124,6 +147,9 @@ class RGBHeader(tk.Canvas):
         self.sub_id = self.create_text(0, 31, text=subtitle, anchor="w", fill=MUTED,
                                        font=("Segoe UI Semibold", 9))
         self.bar = []
+        self.hue = -1
+        self.accented = []                    # (widget, base style) of the widgets that follow the accent
+        self.found_at = 0
         self.bind("<Configure>", self._layout)
         self.after(30, self._tick)
 
@@ -145,12 +171,31 @@ class RGBHeader(tk.Canvas):
         accent = hue_hex(self.phase, 0.65, 1.0)
         self.winfo_toplevel()._accent_phase = self.phase
         self.itemconfigure(self.sub_id, fill=accent)
-        self.style.configure("Accent.TButton", background=accent, lightcolor=accent, darkcolor=accent,
-                             bordercolor=accent)
-        self.style.map("Accent.TButton", background=[("active", hue_hex(self.phase, 0.45, 1.0)),
-                                                     ("disabled", PANEL)],
-                       foreground=[("disabled", "#4b5063")])
-        self.style.map("TNotebook.Tab", foreground=[("selected", accent), ("active", FG)],
-                       background=[("selected", PANEL), ("active", FIELD)])
-        self.style.configure("AccentText.TButton", foreground=accent)   # e.g. Reconnect: RGB text
+        hue = int(self.phase * HUES) % HUES
+        if hue != self.hue:
+            self.hue = hue
+            if not self.found_at or self.phase < self.found_at:
+                self._find_accented()
+            for w, base in self.accented:
+                try:
+                    w.configure(style=f"H{hue}.{base}")
+                except tk.TclError:
+                    pass
         self.after(50, self._tick)
+
+    def _find_accented(self):
+        """Collect accent buttons (Accent / AccentText) and notebooks; re-done once per colour cycle so
+        widgets made later join in."""
+        self.found_at = max(self.phase, 1e-6)
+        found, todo = [], [self.winfo_toplevel()]
+        while todo:
+            w = todo.pop()
+            todo.extend(w.winfo_children())
+            if isinstance(w, ttk.Notebook):
+                found.append((w, "TNotebook"))
+            elif isinstance(w, ttk.Button):
+                name = str(w.cget("style"))
+                base = name.split(".", 1)[1] if name.startswith("H") and "." in name else name
+                if base in ("Accent.TButton", "AccentText.TButton"):
+                    found.append((w, base))
+        self.accented = found
