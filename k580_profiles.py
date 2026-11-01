@@ -185,17 +185,23 @@ class ProfilesPage:
             meta = "Can't read this profile"
         c.create_text(16, 108, anchor="w", text=name, font=("Segoe UI Semibold", 11), fill=th.FG,
                       width=170)
-        c.create_text(16, 131, anchor="w", text=meta, font=("Segoe UI", 9), fill=th.MUTED, width=180)
+        c.create_text(16, 131, anchor="w", text=meta, font=("Segoe UI", 9), fill=th.MUTED, width=160)
+        # top right: ACTIVE on the active card, else "Click to load" on hover; an icon's name on its hover
+        rest = "ACTIVE" if active else "Click to load"
+        hint = c.create_text(CARD_W - 18, 108, anchor="e", text=rest, fill=th.FG,
+                             font=("Segoe UI Semibold", 8) if active else ("Segoe UI", 8),
+                             state="normal" if active else "hidden", tags="badge" if active else "")
+        icons = (("", "Save keyboard to this profile", lambda: self.app.update_profile(name), False),
+                 ("", "Rename", lambda: self.open_form("rename", name), False),
+                 ("", "Delete", lambda: self.app.delete_profile(name), True))
+        x = CARD_W - 16 - 3 * 30 - 2 * 6
+        for glyph, tip, command, danger in icons:
+            self.icon_button(c, x, 118, x + 30, 144, glyph, tip, command, hint, rest, danger)
+            x += 36
         if active:
-            c.create_text(CARD_W - 18, 108, anchor="e", text="ACTIVE", font=("Segoe UI Semibold", 8),
-                          fill=th.FG, tags="badge")
             self.cards.append((c, outline, name))
-            self.button(c, CARD_W - 52, 120, CARD_W - 16, 142, "•••", lambda: self.menu(c, name), small=True)
         else:
-            # the whole card loads the profile; only the ••• button does something else
-            hint = c.create_text(CARD_W - 18, 108, anchor="e", text="Click to load", fill=th.FG,
-                                 font=("Segoe UI", 8), state="hidden")
-            self.button(c, CARD_W - 52, 120, CARD_W - 16, 142, "•••", lambda: self.menu(c, name), small=True)
+            # the whole card loads the profile; only the icon buttons do something else
             c._cursor = "hand2"
             c.config(cursor="hand2")
 
@@ -230,6 +236,29 @@ class ProfilesPage:
         c.tag_bind(tag, "<Enter>", lambda e: (c.itemconfigure(bg, fill=th.BORDER), c.config(cursor="hand2")))
         c.tag_bind(tag, "<Leave>", lambda e: (c.itemconfigure(bg, fill=th.FIELD_HI),
                                               c.config(cursor=getattr(c, "_cursor", ""))))
+        c.tag_bind(tag, "<ButtonRelease-1>", lambda e: command())
+
+    def icon_button(self, c, x1, y1, x2, y2, glyph, tip, command, hint, rest, danger=False):
+        """A small button with a Segoe MDL2 icon; hovering it names it where `hint` is."""
+        tag = f"btn{x1}_{y1}"
+        bg = rounded(c, x1, y1, x2, y2, 8, fill=th.FIELD_HI, outline=th.BORDER, tags=tag)
+        icon = c.create_text((x1 + x2) / 2, (y1 + y2) / 2 + 1, text=glyph, fill=th.FG, tags=tag,
+                             font=("Segoe MDL2 Assets", 10))
+        hot = "#ff6b6b" if danger else th.FG
+
+        def enter(e):
+            c.itemconfigure(bg, fill=th.BORDER, outline=hot if danger else th.MUTED)
+            c.itemconfigure(icon, fill=hot)
+            c.itemconfigure(hint, text=tip, state="normal")
+            c.config(cursor="hand2")
+
+        def leave(e):
+            c.itemconfigure(bg, fill=th.FIELD_HI, outline=th.BORDER)
+            c.itemconfigure(icon, fill=th.FG)
+            c.itemconfigure(hint, text=rest)
+            c.config(cursor=getattr(c, "_cursor", ""))
+        c.tag_bind(tag, "<Enter>", enter)
+        c.tag_bind(tag, "<Leave>", leave)
         c.tag_bind(tag, "<ButtonRelease-1>", lambda e: command())
 
     def menu(self, c, name, e=None):
