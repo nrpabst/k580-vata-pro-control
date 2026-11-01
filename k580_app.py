@@ -521,9 +521,15 @@ class App(tk.Tk):
         self.bright = tk.DoubleVar()
         self.speed = tk.DoubleVar()
         self.color = tk.StringVar()
-        ttk.Label(f, text="Effect").grid(row=2, column=0, sticky="w", pady=8)
-        ec = ttk.Combobox(f, textvariable=self.effect, values=names, state="readonly", width=24)
-        ec.grid(row=2, column=1, sticky="w")
+        ttk.Label(f, text="Effect").grid(row=2, column=0, sticky="nw", pady=(12, 0))
+        ecell = ttk.Frame(f)
+        ecell.grid(row=2, column=1, sticky="w", pady=(8, 0))
+        ec = ttk.Combobox(ecell, textvariable=self.effect, values=names, state="readonly", width=24)
+        ec.pack(anchor="w")
+        # how-to for Self-define, shown right under the effect box only when it's picked
+        self.sd_note = ttk.Label(ecell, style="Muted.TLabel", text=(
+            "Give each key its own colour: on the Key colors page, click keys,\n"
+            "pick a colour, then click Save to keyboard."))
         ec.bind("<<ComboboxSelected>>", lambda e: self.apply_lighting(new_effect=True))
         ttk.Label(f, text="Brightness").grid(row=3, column=0, sticky="w", pady=8)
         self.snap_slider(f, self.bright, self.brightness_levels).grid(row=3, column=1, sticky="w", pady=6)
@@ -1088,15 +1094,16 @@ class App(tk.Tk):
         note = "Changes apply instantly."
         if hw in (3, 6, 15, 16, 17):
             note += f" {name} uses its own rainbow colors."
-        elif hw == 21:
-            note += (" Self-define shows your own colour for each key: set them on the Key colors"
-                     " page and click Save to keyboard.")
         elif hw == 1:
             note += " Fixed on doesn't move, so it has no speed."
         import k580_preview
         if hw in k580_preview.REACTIVE:
-            note += f" {name}: {k580_preview.REACTIVE[hw]} (not shown in the preview)."
+            note += f" {name}: {k580_preview.REACTIVE[hw]} (the preview fakes the key presses)."
         self.effect_note.config(text=note)
+        if hw == 21:
+            self.sd_note.pack(anchor="w", pady=(4, 0))
+        else:
+            self.sd_note.pack_forget()
 
     def apply_lighting(self, new_effect=False, keep_sliders=False):
         if not (self.kb or self.wl):
