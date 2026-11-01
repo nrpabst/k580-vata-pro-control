@@ -954,7 +954,13 @@ class App(tk.Tk):
         import k580_patch
         v = self.firmware_variant() if self.kb else self.marker_variant()
         pct = led[k580_patch.BATTERY_BYTE]
-        self.battery.config(text=f"Battery {pct}%" if v == "switch" and pct <= 100 else "")
+        if v != "switch":
+            text = ""
+        elif self.kb:                       # on the cable it charges and isn't measured
+            text = "Battery: charging"
+        else:
+            text = f"Battery {pct}%" if pct <= 100 else "Battery: checking..."
+        self.battery.config(text=text)
 
     def show_lighting(self):
         self.show_battery(self.led)
