@@ -24,7 +24,8 @@ COLS, ROWS = 21, 6
 DARK_KEYS = {6, 23, 29, 41, 47}      # G1-G5 (matrix index = col * 6 + row): stock effects leave them dark
 OFF = 0xFF                           # table value: draw this key black
 SKIP_KEYS = {77, 88, 113, 125,       # volume/brightness key + media keys: their own lights, leave alone
-             102, 108, 114, 120}   # status lights above the numpad (Caps Lock etc.)
+             102, 108, 114, 120,   # status lights above the numpad (Caps Lock etc.)
+             70, 75, 76, 87, 93, 99, 100, 123}   # grid spots with no key: the side light strips
 SKIP = 0xFE                          # table value: don't touch this key
 
 
