@@ -76,6 +76,11 @@ def apply(root):
     st.map("TNotebook.Tab", background=[("selected", PANEL), ("active", FIELD)],
            foreground=[("selected", FG), ("active", FG)], lightcolor=[("selected", PANEL)])
     st.configure("TSeparator", background=BORDER)
+    # segmented choices (e.g. the Keys page layer): ttk.Radiobutton with style="Toolbutton"
+    st.configure("Toolbutton", background=FIELD, foreground=MUTED, padding=(12, 5), borderwidth=1,
+                 bordercolor=BORDER, lightcolor=FIELD, darkcolor=FIELD, font=FONT)
+    st.map("Toolbutton", background=[("selected", FIELD_HI), ("active", FIELD_HI)],
+           foreground=[("selected", FG), ("active", FG)], bordercolor=[("selected", FG)])
     # sliders: dark recessed track, light handle (kept static: restyling a ttk.Scale makes its handle jump)
     for sc in ("Horizontal.TScale", "Vertical.TScale"):
         st.configure(sc, background=FG, troughcolor="#090a0d", bordercolor=BORDER,

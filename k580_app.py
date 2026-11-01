@@ -53,6 +53,10 @@ for i in range(12):
     HID[f"F{i + 1}"] = 0x3A + i
 for i in range(12, 24):
     HID[f"F{i + 1}"] = 0x68 + (i - 12)
+HID.update({"Num/": 0x54, "Num*": 0x55, "Num-": 0x56, "Num+": 0x57, "NumEnter": 0x58, "Num0": 0x62,
+            "Num.": 0x63})
+for i in range(9):
+    HID[f"Num{i + 1}"] = 0x59 + i
 MODIFIERS = {"LCtrl": 0x01, "LShift": 0x02, "LAlt": 0x04, "LWin": 0x08,
              "RCtrl": 0x10, "RShift": 0x20, "RAlt": 0x40, "RWin": 0x80}
 
@@ -101,6 +105,10 @@ def actions():
     a["Brightness - (lighting)"] = bytes.fromhex("08030200")
     a["Speed + (lighting)"] = bytes.fromhex("08040100")
     a["Speed - (lighting)"] = bytes.fromhex("08040200")
+    a["Volume/brightness knob mode switch (lighting)"] = bytes.fromhex("07000014")
+    a["Knob function 0x19"] = bytes.fromhex("07000019")
+    for n in range(5):
+        a[f"G{n + 1} macro key"] = bytes([0x07, 0, n, 0x03])
     # custom firmware light switches (bound on the Fn layer automatically)
     a["Media key lights on/off (lighting)"] = bytes.fromhex("07000000")
     a["Volume/brightness key light on/off (lighting)"] = bytes.fromhex("07000013")
@@ -121,10 +129,85 @@ def category_of(name):
     return "Other"
 
 
+# Windows virtual-key code -> HID usage, for "press the key you want"
+VK_TO_HID = {0x0D: 0x28, 0x1B: 0x29, 0x08: 0x2A, 0x09: 0x2B, 0x20: 0x2C, 0xBD: 0x2D, 0xBB: 0x2E,
+             0xDB: 0x2F, 0xDD: 0x30, 0xDC: 0x31, 0xBA: 0x33, 0xDE: 0x34, 0xC0: 0x35, 0xBC: 0x36,
+             0xBE: 0x37, 0xBF: 0x38, 0x14: 0x39, 0x2C: 0x46, 0x91: 0x47, 0x13: 0x48, 0x2D: 0x49,
+             0x24: 0x4A, 0x21: 0x4B, 0x2E: 0x4C, 0x23: 0x4D, 0x22: 0x4E, 0x27: 0x4F, 0x25: 0x50,
+             0x28: 0x51, 0x26: 0x52, 0x90: 0x53, 0x6F: 0x54, 0x6A: 0x55, 0x6D: 0x56, 0x6B: 0x57,
+             0x60: 0x62, 0x6E: 0x63, 0x5D: 0x65}
+VK_TO_HID.update({0x41 + i: 0x04 + i for i in range(26)})                      # A-Z
+VK_TO_HID.update({0x31 + i: 0x1E + i for i in range(9)})                       # 1-9
+VK_TO_HID[0x30] = 0x27                                                       # 0
+VK_TO_HID.update({0x70 + i: 0x3A + i for i in range(12)})                      # F1-F12
+VK_TO_HID.update({0x61 + i: 0x59 + i for i in range(9)})                       # Num1-Num9
+# Tk keysym of a modifier key -> modifier name
+MOD_KEYSYMS = {"Control_L": "LCtrl", "Control_R": "RCtrl", "Shift_L": "LShift", "Shift_R": "RShift",
+               "Alt_L": "LAlt", "Alt_R": "RAlt", "Win_L": "LWin", "Win_R": "RWin"}
+SHORT_MODS = {"LCtrl": "^", "RCtrl": "^", "LShift": "⇧", "RShift": "⇧", "LAlt": "Alt+", "RAlt": "Alt+",
+              "LWin": "Win+", "RWin": "Win+"}
+SHORT_MEDIA = {"Play/Pause": "Play", "MediaPlayer": "Media", "Calculator": "Calc", "MyComputer": "PC",
+               "WWW Search": "Srch", "WWW Home": "Home", "WWW Back": "Back", "WWW Fwd": "Fwd",
+               "WWW Stop": "Stop", "WWW Refresh": "Rfrsh", "WWW Favorites": "Favs"}
+SHORT_MOUSE = {"Left button": "M1", "Right button": "M2", "Middle button": "M3", "Back": "MBack",
+               "Forward": "MFwd", "Double click": "M1x2", "Scroll up": "Whl↑", "Scroll down": "Whl↓"}
+
+
+# keyboard functions (07 00 00 nn) the stock Fn layer uses, from the firmware's dispatch table
+KEY_FUNCTIONS = {0x01: ("Win-key lock", "WinLk"), 0x04: ("Reset to defaults (hold)", "Reset"),
+                 0x05: ("Bluetooth device 1", "BT1"), 0x06: ("Bluetooth device 2", "BT2"),
+                 0x07: ("Bluetooth device 3", "BT3"), 0x08: ("2.4G pairing", "2.4G"),
+                 0x09: ("Switch to cable", "Cable"), 0x11: ("Show battery", "Batt"),
+                 0x12: ("One-colour lighting", "1Col")}
+
+
+def short_label(entry):
+    """A key-cap sized (≤5 chars) name for what a matrix entry does."""
+    name = describe(entry)
+    kind, _, rest = name.partition(": ")
+    if entry == bytes(4):
+        return "—"
+    if kind == "Key":
+        rest = KeyboardView.SHORT.get(rest, rest)
+        return rest[:5]
+    if kind == "Combination":
+        parts = rest.split(" + ")
+        key = parts[-1] if parts[-1] not in MODIFIERS else ""
+        mods = "".join(SHORT_MODS.get(m, "") for m in parts if m in MODIFIERS)
+        return (mods + key)[:5]
+    if kind == "Multimedia":
+        return SHORT_MEDIA.get(rest, rest)[:5]
+    if kind == "Mouse":
+        return SHORT_MOUSE.get(rest, rest)[:5]
+    if kind == "Command":
+        return rest[:5]
+    if name == "Fn":
+        return "Fn"
+    if name.endswith("macro key"):
+        return name.split()[0]
+    if name.startswith("Volume/brightness knob mode"):
+        return "Mode"
+    if name.startswith("Knob function"):
+        return "Knob"
+    if "on/off (lighting)" in name:
+        return "LtOn"
+    if "(lighting)" in name:
+        return name[:5]
+    if entry[0] == 0x07 and entry[3] in KEY_FUNCTIONS:
+        return KEY_FUNCTIONS[entry[3]][1]
+    if entry[0] == 0x07:
+        return "Fn"
+    if entry[0] == 0x08:
+        return "Light"
+    return "•"
+
+
 def describe(entry):
     name = ACTION_BY_BYTES.get(entry)
     if name:
         return name
+    if entry[0] == 0x07 and entry[2] == 0 and entry[3] in KEY_FUNCTIONS:
+        return "Keyboard function: " + KEY_FUNCTIONS[entry[3]][0]
     if entry[0] == 0 and entry[1] and entry[3]:
         mods = [m for m, bit in MODIFIERS.items() if entry[1] & bit]
         key = next((k for k, c in HID.items() if c == entry[3]), hex(entry[3]))
@@ -214,6 +297,7 @@ class KeyboardView(tk.Canvas):
         self.marked = set()
         self.fills = {}
         self.rects = {}
+        self.texts = {}
         # keys that have no position in the layout file: G1-G5, mode/wheel keys, media keys
         extra = [(6, "G1"), (23, "G2"), (29, "G3"), (41, "G4"), (47, "G5"),
                  (77, "Mode"), (71, "Wheel"), (88, "Prev"), (113, "Play"), (125, "Next")]
@@ -227,9 +311,12 @@ class KeyboardView(tk.Canvas):
             items = [r]
             name = k580.KEY_NAMES.get(idx, "")
             name = self.SHORT.get(name, name)
-            if labels and len(name) <= 5:
-                items.append(self.create_text((x1 + x2) / 2 * s, ((y1 + y2) / 2 - 45) * s, text=name,
-                                              fill=k580_theme.MUTED, font=("Segoe UI", 6)))
+            if labels:
+                t = self.create_text((x1 + x2) / 2 * s, ((y1 + y2) / 2 - 45) * s,
+                                     text=name if len(name) <= 5 else "", fill=k580_theme.MUTED,
+                                     font=("Segoe UI", 6))
+                self.texts[idx] = t
+                items.append(t)
             for it in items:
                 self.tag_bind(it, "<Button-1>", lambda e, i=idx: self._click(i))
         self.redraw()
@@ -249,6 +336,13 @@ class KeyboardView(tk.Canvas):
         boxes = {i: self.coords(r) for i, r in self.rects.items()}
         w, h = int(self.cget("width")), int(self.cget("height"))
         return {i: ((b[0] + b[2]) / 2 / w, (b[1] + b[3]) / 2 / h) for i, b in boxes.items()}
+
+    def set_labels(self, labels, highlight=()):
+        """Replace key labels ({idx: text}); keys in `highlight` are drawn brighter."""
+        for idx, t in self.texts.items():
+            if idx in labels:
+                self.itemconfig(t, text=labels[idx],
+                                fill=k580_theme.FG if idx in highlight else k580_theme.MUTED)
 
     def set_fills(self, fills):
         self.fills = dict(fills)
@@ -1273,51 +1367,52 @@ class App(tk.Tk):
 
     def build_keys(self, nb):
         f, self.kkb, self.key_info = self.keyboard_page(
-            nb, "Keys", self.key_clicked, "Click a key to see or change what it does.")
+            nb, "Keys", self.key_clicked,
+            "Each key shows what it does. Changed keys are outlined. Click a key to change it.")
         self.key_sel = None
+        self.capturing = False
         self.layer = tk.StringVar(value="Normal")
         self.category = tk.StringVar(value="Key")
         self.action = tk.StringVar()
         f.columnconfigure(1, weight=1)
 
-        ttk.Label(f, text="Layer").grid(row=2, column=0, sticky="w", pady=8)
-        lc = ttk.Combobox(f, textvariable=self.layer, values=["Normal", "Fn (while holding Fn)"],
-                          state="readonly", width=24)
-        lc.grid(row=2, column=1, columnspan=3, sticky="w")
-        lc.bind("<<ComboboxSelected>>", lambda e: self.show_key())
-        ttk.Label(f, text="Currently").grid(row=3, column=0, sticky="w", pady=8)
-        self.current = ttk.Label(f, text="-")
-        self.current.grid(row=3, column=1, columnspan=3, sticky="w")
+        top = ttk.Frame(f)
+        top.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(4, 8))
+        ttk.Label(top, text="Layer").pack(side="left", padx=(0, 10))
+        for value, text in (("Normal", "Normal"), ("Fn", "While holding Fn")):
+            ttk.Radiobutton(top, text=text, value=value, variable=self.layer, style="Toolbutton",
+                            command=self.show_key).pack(side="left", padx=(0, 6))
+        ttk.Button(top, text="Reset all keys on this layer", command=self.reset_layer).pack(side="right")
 
-        ttk.Separator(f).grid(row=4, column=0, columnspan=4, sticky="ew", pady=10)
-        ttk.Label(f, text="Make it").grid(row=5, column=0, sticky="w", pady=8)
+        ttk.Separator(f).grid(row=3, column=0, columnspan=4, sticky="ew", pady=6)
+        self.sel_title = ttk.Label(f, text="No key selected", font=k580_theme.FONT_BOLD)
+        self.sel_title.grid(row=4, column=0, columnspan=4, sticky="w")
+        self.current = ttk.Label(f, text="Click a key on the keyboard above.", style="Muted.TLabel")
+        self.current.grid(row=5, column=0, columnspan=4, sticky="w", pady=(2, 10))
+
+        acts = ttk.Frame(f)
+        acts.grid(row=6, column=0, columnspan=4, sticky="w")
+        self.capture_btn = ttk.Button(acts, text="Press the new key or shortcut…", style="Accent.TButton",
+                                      command=self.toggle_capture)
+        self.capture_btn.pack(side="left", padx=(0, 8))
+        ttk.Button(acts, text="Disable key", command=lambda: self._set_entry(bytes(4))) \
+            .pack(side="left", padx=(0, 8))
+        ttk.Button(acts, text="Reset key", command=self.reset_key).pack(side="left")
+        self.capture_note = ttk.Label(f, text="", style="Muted.TLabel")
+        self.capture_note.grid(row=7, column=0, columnspan=4, sticky="w", pady=(4, 0))
+
+        ttk.Label(f, text="Or choose from a list (media keys, mouse buttons, commands, lighting…)") \
+            .grid(row=8, column=0, columnspan=4, sticky="w", pady=(14, 6))
         row = ttk.Frame(f)
-        row.grid(row=5, column=1, columnspan=3, sticky="w")
+        row.grid(row=9, column=0, columnspan=4, sticky="w")
         cc = ttk.Combobox(row, textvariable=self.category, values=CATEGORIES, state="readonly", width=12)
         cc.pack(side="left")
         cc.bind("<<ComboboxSelected>>", lambda e: self.fill_actions())
-        self.action_box = ttk.Combobox(row, textvariable=self.action, state="readonly", width=24)
+        self.action_box = ttk.Combobox(row, textvariable=self.action, state="readonly", width=28)
         self.action_box.pack(side="left", padx=(8, 8))
         ttk.Button(row, text="Apply", command=self.apply_key, style="Accent.TButton").pack(side="left")
-
-        ttk.Label(f, text="Or a shortcut").grid(row=6, column=0, sticky="w", pady=8)
-        self.combo_mods = {m: tk.BooleanVar() for m in ("LCtrl", "LShift", "LAlt", "LWin")}
-        mf = ttk.Frame(f)
-        mf.grid(row=6, column=1, columnspan=3, sticky="w")
-        for m, var in self.combo_mods.items():
-            ttk.Checkbutton(mf, text=m[1:], variable=var).pack(side="left", padx=(0, 6))
-        self.combo_key = tk.StringVar()
-        ttk.Label(mf, text="+").pack(side="left", padx=(0, 6))
-        ttk.Combobox(mf, textvariable=self.combo_key, values=list(HID), state="readonly", width=8) \
-            .pack(side="left")
-        ttk.Button(mf, text="Apply", command=self.apply_combo, style="Accent.TButton") \
-            .pack(side="left", padx=(8, 0))
-
-        ttk.Separator(f).grid(row=7, column=0, columnspan=4, sticky="ew", pady=10)
-        ttk.Button(f, text="Reset this key", command=self.reset_key).grid(row=8, column=0, columnspan=2,
-                                                                         sticky="w")
-        ttk.Label(f, text="Changed keys are outlined. Macros are assigned on the Macros page.",
-                  style="Muted.TLabel").grid(row=9, column=0, columnspan=4, sticky="w", pady=10)
+        ttk.Label(f, text="Macros are assigned on the Macros page.", style="Muted.TLabel") \
+            .grid(row=10, column=0, columnspan=4, sticky="w", pady=(14, 0))
         self.fill_actions()
         nb.bind("<<NotebookTabChanged>>",
                 lambda e: self.show_key() if self.kb and nb.tab(nb.select(), "text") == "Keys" else None,
@@ -1327,10 +1422,59 @@ class App(tk.Tk):
         """Keys page: one key at a time."""
         if idx is None:
             return
+        self.stop_capture()
         self.key_sel = idx
         self.kkb.selected = {idx}
         self.kkb.redraw()
         self.show_key()
+
+    # "press the key you want": the next key (plus any held Ctrl/Shift/Alt/Win) becomes the mapping
+    def toggle_capture(self):
+        if self.capturing:
+            self.stop_capture()
+            return
+        if self._key_idx() is None:
+            self.capture_note.config(text="Click a key on the keyboard above first.")
+            return
+        self.capturing = True
+        self.capture_mods = set()
+        self.capture_btn.config(text="Cancel")
+        self.capture_note.config(text="Press the key or shortcut now (on this keyboard or any other)…")
+        self.focus_force()
+        self.bind_all("<KeyPress>", self.on_capture_key)
+        self.bind_all("<KeyRelease>", self.on_capture_release)
+
+    def stop_capture(self, note=""):
+        if not getattr(self, "capturing", False):
+            return
+        self.capturing = False
+        self.unbind_all("<KeyPress>")
+        self.unbind_all("<KeyRelease>")
+        self.capture_btn.config(text="Press the new key or shortcut…")
+        self.capture_note.config(text=note)
+
+    def on_capture_key(self, e):
+        if e.keysym in MOD_KEYSYMS:
+            self.capture_mods.add(MOD_KEYSYMS[e.keysym])
+            return "break"
+        code = VK_TO_HID.get(e.keycode)
+        if code is None:
+            self.capture_note.config(text=f"That key ({e.keysym}) can't be assigned here. Try another, "
+                                          "or pick it from the list.")
+            return "break"
+        bits = 0
+        for m in self.capture_mods:
+            bits |= MODIFIERS[m]
+        self.stop_capture()
+        self._set_entry(bytes([0, bits, 0, code]))
+        return "break"
+
+    def on_capture_release(self, e):
+        # a modifier pressed and released on its own: map to that modifier key
+        if e.keysym in MOD_KEYSYMS and self.capture_mods == {MOD_KEYSYMS[e.keysym]}:
+            self.stop_capture()
+            self._set_entry(bytes([0, MODIFIERS[MOD_KEYSYMS[e.keysym]], 0, 0]))
+        return "break"
 
     def fill_actions(self):
         names = [n for n in ACTIONS if category_of(n) == self.category.get()]
@@ -1340,6 +1484,26 @@ class App(tk.Tk):
     def _layer_idx(self):
         return 0 if self.layer.get() == "Normal" else 1
 
+    def first_run_layer(self):
+        path = os.path.join(HERE, "backups", "first-run.json")
+        try:
+            with open(path) as fh:
+                return bytes.fromhex(json.load(fh)["matrix"][self._layer_idx()])
+        except (OSError, KeyError, ValueError, IndexError):
+            return None
+
+    def reset_layer(self):
+        first = self.first_run_layer()
+        if not self.need_kb() or first is None:
+            return
+        name = "normal" if self._layer_idx() == 0 else "Fn"
+        if not messagebox.askyesno("K580", f"Put every key on the {name} layer back to how it was when this "
+                                           "app first saw the keyboard?"):
+            return
+        self.kb.write(k580.OP_MATRIX, first, sub=self._layer_idx())
+        time.sleep(0.2)
+        self.show_key()
+
     def _key_idx(self):
         return self.key_sel
 
@@ -1348,20 +1512,23 @@ class App(tk.Tk):
             return
         m = self.kb.get_matrix(self._layer_idx())
         self.mark_changed_keys(m)
+        # every key cap shows what it does on this layer
+        first = self.first_run_layer() or m
+        changed = {i for i in self.kkb.rects if m[i * 4:i * 4 + 4] != first[i * 4:i * 4 + 4]}
+        self.kkb.set_labels({i: short_label(m[i * 4:i * 4 + 4]) for i in self.kkb.rects}, highlight=changed)
         i = self._key_idx()
         if i is None:
             return
         name = k580.KEY_NAMES.get(i, "#%d" % i)
-        self.key_info.config(text="Selected: " + KeyboardView.SHORT.get(name, name))
-        self.current.config(text=describe(m[i * 4:i * 4 + 4]))
+        name = KeyboardView.SHORT.get(name, name)
+        layer = "" if self._layer_idx() == 0 else "Fn + "
+        self.sel_title.config(text=f"{layer}{name}")
+        self.current.config(text="Does: " + describe(m[i * 4:i * 4 + 4]))
 
     def mark_changed_keys(self, m):
         """Outline keys that differ from how the app first found the keyboard."""
-        path = os.path.join(HERE, "backups", "first-run.json")
-        try:
-            with open(path) as fh:
-                first = bytes.fromhex(json.load(fh)["matrix"][self._layer_idx()])
-        except (OSError, KeyError, ValueError, IndexError):
+        first = self.first_run_layer()
+        if first is None:
             return
         self.kkb.set_marked({i for i in self.kkb.rects if m[i * 4:i * 4 + 4] != first[i * 4:i * 4 + 4]})
 
@@ -1378,13 +1545,6 @@ class App(tk.Tk):
     def apply_key(self):
         if self.action.get() in ACTIONS:
             self._set_entry(ACTIONS[self.action.get()])
-
-    def apply_combo(self):
-        mods = [m for m, v in self.combo_mods.items() if v.get()]
-        if not mods or not self.combo_key.get():
-            messagebox.showinfo("K580", "Tick at least one of Ctrl/Shift/Alt/Win and pick a key.")
-            return
-        self._set_entry(combo(mods, self.combo_key.get()))
 
     def reset_key(self):
         """Put the key back to what it was the first time this app saw the keyboard."""
