@@ -30,7 +30,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUNDLE = getattr(sys, "_MEIPASS", ROOT)
 HERE = os.path.join(os.environ.get("APPDATA", ROOT), "K580 Control") if FROZEN else ROOT
 os.makedirs(HERE, exist_ok=True)
-APP_VERSION = "0.3.2"
+APP_VERSION = "0.3.3"
 UPDATE_URL = "https://api.github.com/repos/nrpabst/k580-vata-pro-control/releases/latest"
 RELEASES_PAGE = "https://github.com/nrpabst/k580-vata-pro-control/releases"
 PREFS_PATH = os.path.join(HERE, "settings.json")
@@ -2457,7 +2457,7 @@ class App(tk.Tk):
              "Click the tray icon to open it again; right-click it to quit.")
         line("Updates", ttk.Button(f, text="Check for updates", command=self.check_updates),
              f"You have version {APP_VERSION}. Checks the project's GitHub page for a newer one.")
-        self.auto_update = tk.BooleanVar(value=load_prefs().get("auto_update", False) and FROZEN)
+        self.auto_update = tk.BooleanVar(value=load_prefs().get("auto_update", True) and FROZEN)   # on unless turned off
         au = ttk.Checkbutton(f, variable=self.auto_update, command=self.set_auto_update,
                              state="normal" if FROZEN else "disabled")
         line("Automatic updates", au,
@@ -2582,7 +2582,7 @@ class App(tk.Tk):
         if self.auto_update_job:
             self.after_cancel(self.auto_update_job)
         self.auto_update_job = self.after(24 * 3600 * 1000, self.auto_update_check)
-        if not (FROZEN and self.prefs.get("auto_update")):
+        if not (FROZEN and self.prefs.get("auto_update", True)):
             return
         result = {}
 
