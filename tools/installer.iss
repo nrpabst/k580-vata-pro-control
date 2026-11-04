@@ -26,7 +26,7 @@ UninstallDisplayName=K580 Control
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-CloseApplications=yes
+CloseApplications=no
 RestartApplications=no
 
 [Tasks]
@@ -59,6 +59,28 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/f /im ""K580 Control.exe"""; Flags
 function IsAutoUpdate: Boolean;
 begin
   Result := ExpandConstant('{param:update|0}') = '1';
+end;
+
+// The app keeps running in the tray, and closing the window only hides it, so Windows' "close
+// applications" step can't close it. Before copying files, give a running copy a moment to quit by
+// itself (an automatic update tells it to), then end any copy that's still there. The packaged app is
+// two processes (a launcher and the app); the launcher can outlive the app, so repeat until none are left.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code, Tries: Integer;
+begin
+  if IsAutoUpdate then
+    Sleep(3000);
+  for Tries := 1 to 4 do
+  begin
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /t /im "K580 Control.exe"', '', SW_HIDE,
+         ewWaitUntilTerminated, Code);
+    Log(Format('taskkill attempt %d: exit code %d', [Tries, Code]));   // 128 = none left
+    if Code = 128 then
+      Break;
+    Sleep(700);
+  end;
+  Result := '';
 end;
 
 // the app's own Start with Windows setting may have added the startup entry even if the installer's

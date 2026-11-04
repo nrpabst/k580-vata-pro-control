@@ -30,7 +30,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUNDLE = getattr(sys, "_MEIPASS", ROOT)
 HERE = os.path.join(os.environ.get("APPDATA", ROOT), "K580 Control") if FROZEN else ROOT
 os.makedirs(HERE, exist_ok=True)
-APP_VERSION = "0.3.3"
+APP_VERSION = "0.3.4"
 UPDATE_URL = "https://api.github.com/repos/nrpabst/k580-vata-pro-control/releases/latest"
 RELEASES_PAGE = "https://github.com/nrpabst/k580-vata-pro-control/releases"
 PREFS_PATH = os.path.join(HERE, "settings.json")
@@ -2689,3 +2689,4 @@ if __name__ == "__main__":
     if k580_tray.show_existing():          # already running: bring that window up instead
         sys.exit(0)
     App().mainloop()
+    os._exit(0)        # don't wait on anything left over (device handles, threads): free the .exe now
