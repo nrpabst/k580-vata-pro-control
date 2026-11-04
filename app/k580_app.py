@@ -30,7 +30,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUNDLE = getattr(sys, "_MEIPASS", ROOT)
 HERE = os.path.join(os.environ.get("APPDATA", ROOT), "K580 Control") if FROZEN else ROOT
 os.makedirs(HERE, exist_ok=True)
-APP_VERSION = "0.3.4"
+APP_VERSION = "0.3.5"
 UPDATE_URL = "https://api.github.com/repos/nrpabst/k580-vata-pro-control/releases/latest"
 RELEASES_PAGE = "https://github.com/nrpabst/k580-vata-pro-control/releases"
 PREFS_PATH = os.path.join(HERE, "settings.json")
@@ -2566,8 +2566,12 @@ class App(tk.Tk):
     def run_setup(self, path):
         """Install silently; the installer closes this app, replaces it and starts the new version."""
         import subprocess
+        # without the packaged app's own launcher variables (_PYI_*): passed on, they'd make the new
+        # version that the installer starts look for its files in this copy's temporary folder
+        env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
         subprocess.Popen([path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/update=1"],
-                         close_fds=True)
+                         close_fds=True, env=env)
         self.after(500, self.quit_app)
 
     def set_auto_update(self):
