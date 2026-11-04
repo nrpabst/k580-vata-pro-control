@@ -1049,7 +1049,7 @@ class App(tk.Tk):
         # stock -> Install; any custom -> Reinstall (latest version, with the options ticked now) or Uninstall.
         # Reinstalling patches the saved stock copy, so it needs backups\my-original-firmware.hex.
         custom = v not in ("stock", "unknown")
-        can_reinstall = custom and os.path.exists(self.OWN_ORIGINAL)
+        can_reinstall = custom          # without the saved stock copy, install_firmware rebuilds it
         self.fw_install.config(text="Reinstall custom firmware" if custom else "Install custom firmware",
                                state="normal" if v == "stock" or can_reinstall else "disabled")
         self.fw_auto.config(state="normal" if v == "stock" or can_reinstall else "disabled")
@@ -1156,9 +1156,6 @@ class App(tk.Tk):
         if not tool:
             return
         own_original = os.path.join(HERE, "backups", "my-original-firmware.hex")
-        if removing and not os.path.exists(own_original):
-            messagebox.showerror("K580", "Your original firmware backup (backups\\my-original-firmware.hex) is missing.")
-            return
         first_time = not removing and not os.path.exists(own_original)
         if not messagebox.askyesno(
                 "K580", ("This puts your original firmware back (about 15 seconds)" if removing else
@@ -1181,25 +1178,29 @@ class App(tk.Tk):
         self.kb.close()
         self.kb = None
         try:
+            if os.path.exists(own_original) and \
+                    k580_patch.state(k580_patch.read_hex(own_original)) == "stock":
+                fw = k580_patch.read_hex(own_original)          # the saved stock copy
+            else:
+                # first install, or the saved copy is gone (e.g. a new install of the app): read the
+                # keyboard; if it runs our custom firmware, take the patch back out to get the original
+                fresh = os.path.join(HERE, "backups", "firmware-read.hex")
+                k580_patch.read_keyboard(tool, fresh)
+                fw = k580_patch.read_hex(fresh)
+                if k580_patch.code_hash(fw) != k580_patch.STOCK_CODE_SHA256:
+                    fw = k580_patch.unpatch(fw)
+                if k580_patch.code_hash(fw) != k580_patch.STOCK_CODE_SHA256:
+                    raise RuntimeError("This keyboard's firmware isn't the version the patch was made for. "
+                                       "Nothing was changed.")
+                k580_patch.write_hex(fw, own_original)
+                os.remove(fresh)
+                self.kb = self.wait_for_keyboard()           # the read reboots the keyboard
+                if self.kb:
+                    self.kb.close()
+                    self.kb = None
             if removing:
                 k580_patch.write_keyboard(tool, own_original)
             else:
-                if os.path.exists(own_original) and \
-                        k580_patch.state(k580_patch.read_hex(own_original)) == "stock":
-                    fw = k580_patch.read_hex(own_original)      # reinstall: patch the saved stock copy
-                else:
-                    fresh = os.path.join(HERE, "backups", "firmware-read.hex")
-                    k580_patch.read_keyboard(tool, fresh)
-                    fw = k580_patch.read_hex(fresh)
-                    st = k580_patch.state(fw)
-                    if st != "stock":
-                        raise RuntimeError("This keyboard's firmware isn't the version the patch was made for "
-                                           f"({st}). Nothing was changed.")
-                    os.replace(fresh, own_original)
-                    self.kb = self.wait_for_keyboard()       # the read reboots the keyboard
-                    if self.kb:
-                        self.kb.close()
-                        self.kb = None
                 patched = os.path.join(HERE, "backups", "patched-firmware.hex")
                 k580_patch.write_hex(k580_patch.apply(fw, auto_wired=self.auto_wired.get()), patched)
                 k580_patch.write_keyboard(tool, patched)

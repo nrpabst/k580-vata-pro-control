@@ -175,6 +175,21 @@ def state(data):
     return "unknown"
 
 
+FREE_FLASH = (0xEC00, 0xEFF0)      # empty in stock firmware; our added code lives here
+
+
+def unpatch(data):
+    """Turn a custom-firmware image (any version of ours) back into stock: every patched site gets its
+    stock bytes again and the added code area is cleared. Check the result with state() == "stock";
+    that's how a lost my-original-firmware.hex is rebuilt from what's on the keyboard."""
+    out = bytearray(data)
+    for addr, old, _new in PATCH + EFFECTS_PATCH + RECORD_FIX_PATCH + AUTO_WIRED_PATCH:
+        o = bytes.fromhex(old)
+        out[addr:addr + len(o)] = o
+    out[FREE_FLASH[0]:FREE_FLASH[1]] = bytes(FREE_FLASH[1] - FREE_FLASH[0])
+    return out
+
+
 def apply(data, auto_wired=False):
     out = bytearray(data)
     for addr, old, new in PATCH + EFFECTS_PATCH + RECORD_FIX_PATCH + (AUTO_WIRED_PATCH if auto_wired else []):
