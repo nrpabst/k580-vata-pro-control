@@ -276,8 +276,7 @@ def build_gflags(base=0xEEB0):
     """Keeps the G-key 'has a recording' flags (XRAM 0x0DB6 + slot) in step with flash, so G keys the
     app records or clears light up right away instead of after a restart. Runs from the 0x421C routine
     (via the battery copy at 0x0F92, which used to LJMP 0x0FC4): skipped while recording (bit 0x3C),
-    and a slot that is being recorded (flag 0xFF) is left alone. It also keeps the Windows key layout
-    (see "done" below)."""
+    and a slot that is being recorded (flag 0xFF) is left alone."""
     a = Asm(base)
     a.b(0x20, 0x3C); a.rel("done")                      # JB 0x3C,done
     a.b(0xC0, 0x06, 0xC0, 0x07)                          # PUSH AR6 ; PUSH AR7
@@ -298,12 +297,5 @@ def build_gflags(base=0xEEB0):
     a.b(0x0F, 0xBF, 0x14); a.rel("loop")                 # INC R7 ; CJNE R7,#20,loop
     a.b(0xD0, 0x07, 0xD0, 0x06)                          # POP AR7 ; POP AR6
     a.label("done")
-    # Keep the keyboard on its Windows key layout. Lighting byte 0 (XRAM 0x039F) picks the key-table
-    # set: 1 is a Mac layout with Win and Alt swapped (flash 0xBE00), which something on the keyboard
-    # can switch on and the app can't switch back (lighting writes keep the live value). Set it back
-    # to 0 and mark the settings to be saved (bit 0x30), as the firmware's own layout keys do.
-    a.mov_dptr(0x039F); a.b(0xE0, 0x60); a.rel("windows")  # JZ windows
-    a.b(0xE4, 0xF0, 0xD2, 0x30)                          # CLR A ; MOVX @DPTR,A ; SETB 0x30
-    a.label("windows")
     a.mov_dptr(0x03B0); a.ljmp(0x421F)                   # the instruction the battery hook replaced
     return a.link(), a.labels

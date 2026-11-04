@@ -100,7 +100,7 @@ RECORD_FIX_PATCH = [
     # EEA0: JNB 0x1E,cancel ; SETB 0x1D ; CLR 0x05 ; LJMP 0x3BC6     EEAA: cancel: RET
     # G-key 'has a recording' flags follow flash (tools/effects_asm.py build_gflags), so recordings
     # the app saves or clears light their G key right away, not after a restart.
-    (0xEEB0, "00" * 75, "203c38c006c0077f00ef75f080a4f582e5f024e0f583e4937e00c3940240027e0174b62ff582e4340df583e0b4ff028002eef00fbf14d2d007d00690039fe06004e4f0d2309003b002421f"),
+    (0xEEB0, "00" * 65, "203c38c006c0077f00ef75f080a4f582e5f024e0f583e4937e00c3940240027e0174b62ff582e4340df583e0b4ff028002eef00fbf14d2d007d0069003b002421f"),
 ]
 # Optional: switch to the cable whenever it's plugged in. The mode switch on the keyboard is read at
 # 0x84AB (pins P5.5 / P3.1, 10 samples each): 2.4G, Bluetooth or cable (XRAM 0x3AD = 1 / 2 / 0).
